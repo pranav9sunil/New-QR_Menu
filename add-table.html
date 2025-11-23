@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <title>Add Test Table</title>
+</head>
+
+<body>
+    <h1>Adding Test Table...</h1>
+    <div id="status">Initializing...</div>
+
+    <script type="module">
+        import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js';
+        import { getFirestore, collection, addDoc, doc, updateDoc } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js';
+
+        const firebaseConfig = {
+            apiKey: "AIzaSyAT2acMkrTKsMMaW2aR5aGLTMdYQbje7i8",
+            authDomain: "qr-ordering-system-c80d4.firebaseapp.com",
+            projectId: "qr-ordering-system-c80d4",
+            storageBucket: "qr-ordering-system-c80d4.firebasestorage.app",
+            messagingSenderId: "380518528753",
+            appId: "1:380518528753:web:4893e0ed933138b5f99b50",
+            measurementId: "G-6T9PQMLRY9"
+        };
+
+        const app = initializeApp(firebaseConfig);
+        const db = getFirestore(app);
+
+        async function addTable() {
+            const status = document.getElementById('status');
+            try {
+                // Add a table
+                const tableData = {
+                    restaurantId: 'rest_001',
+                    name: 'table_1',
+                    seats: 4,
+                    position: { x: 100, y: 100 },
+                    isActive: true,
+                    createdAt: new Date()
+                };
+
+                await addDoc(collection(db, 'tables'), tableData);
+                status.innerText = 'Table added successfully!';
+
+                // Update restaurant config
+                await updateDoc(doc(db, 'restaurants', 'rest_001'), {
+                    layoutConfigured: true
+                });
+                status.innerText += ' Layout configured updated.';
+
+            } catch (error) {
+                status.innerText = 'Error: ' + error.message;
+                console.error(error);
+            }
+        }
+
+        addTable();
+    </script>
+</body>
+
+</html>

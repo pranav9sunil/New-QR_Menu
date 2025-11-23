@@ -1,0 +1,85 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Test Firebase Connection</title>
+    <script type="module">
+        import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js';
+        import { getFirestore, collection, getDocs } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js';
+
+        const firebaseConfig = {
+            apiKey: "AIzaSyAT2acMkrTKsMMaW2aR5aGLTMdYQbje7i8",
+            authDomain: "qr-ordering-system-c80d4.firebaseapp.com",
+            projectId: "qr-ordering-system-c80d4",
+            storageBucket: "qr-ordering-system-c80d4.firebasestorage.app",
+            messagingSenderId: "380518528753",
+            appId: "1:380518528753:web:4893e0ed933138b5f99b50",
+            measurementId: "G-6T9PQMLRY9"
+        };
+
+        const app = initializeApp(firebaseConfig);
+        const db = getFirestore(app);
+
+        async function testConnection() {
+            const results = document.getElementById('results');
+            results.innerHTML = '<h2>Testing Firebase Connection...</h2>';
+
+            try {
+                // Test Restaurants
+                results.innerHTML += '<h3>📍 Checking Restaurants...</h3>';
+                const restaurantsSnapshot = await getDocs(collection(db, 'restaurants'));
+                results.innerHTML += `Found ${restaurantsSnapshot.size} restaurant(s)<br>`;
+                restaurantsSnapshot.forEach(doc => {
+                    results.innerHTML += `<pre>ID: ${doc.id}\nData: ${JSON.stringify(doc.data(), null, 2)}</pre>`;
+                });
+
+                // Test Tables
+                results.innerHTML += '<h3>📍 Checking Tables...</h3>';
+                const tablesSnapshot = await getDocs(collection(db, 'tables'));
+                results.innerHTML += `Found ${tablesSnapshot.size} table(s)<br>`;
+                tablesSnapshot.forEach(doc => {
+                    results.innerHTML += `<pre>ID: ${doc.id}\nData: ${JSON.stringify(doc.data(), null, 2)}</pre>`;
+                });
+
+                // Test Menu Items
+                results.innerHTML += '<h3>📍 Checking Menu Items...</h3>';
+                const menuSnapshot = await getDocs(collection(db, 'menu_items'));
+                results.innerHTML += `Found ${menuSnapshot.size} menu item(s)<br>`;
+                menuSnapshot.forEach(doc => {
+                    results.innerHTML += `<pre>ID: ${doc.id}\nData: ${JSON.stringify(doc.data(), null, 2)}</pre>`;
+                });
+
+                results.innerHTML += '<h2 style="color: green;">✅ Connection Successful!</h2>';
+            } catch (error) {
+                results.innerHTML += `<h2 style="color: red;">❌ Error: ${error.message}</h2>`;
+                results.innerHTML += `<pre>${error.stack}</pre>`;
+            }
+        }
+
+        window.onload = testConnection;
+    </script>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 1200px;
+            margin: 50px auto;
+            padding: 20px;
+            background: #f5f5f5;
+        }
+        #results {
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        pre {
+            background: #f0f0f0;
+            padding: 10px;
+            border-radius: 4px;
+            overflow-x: auto;
+        }
+    </style>
+</head>
+<body>
+    <div id="results">Loading...</div>
+</body>
+</html>

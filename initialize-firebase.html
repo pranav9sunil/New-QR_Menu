@@ -1,0 +1,220 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <title>Initialize Firebase Data</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 50px auto;
+            padding: 20px;
+            background: #f5f5f5;
+        }
+
+        #results {
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+        }
+
+        button {
+            background: #3b82f6;
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 14px;
+            margin: 10px 10px 10px 0;
+        }
+
+        button:hover {
+            background: #2563eb;
+        }
+
+        .success {
+            color: green;
+            font-weight: bold;
+        }
+
+        .error {
+            color: red;
+            font-weight: bold;
+        }
+
+        pre {
+            background: #f0f0f0;
+            padding: 10px;
+            border-radius: 4px;
+            overflow-x: auto;
+        }
+    </style>
+</head>
+
+<body>
+    <h1>QR Ordering System - Firebase Initialization</h1>
+    <div id="results">
+        <h2>Click the button below to initialize Firebase</h2>
+        <button onclick="initializeFirebase()">Initialize Firebase Data</button>
+    </div>
+
+    <script type="module">
+        import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js';
+        import { getAuth, createUserWithEmailAndPassword } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js';
+        import { getFirestore, doc, setDoc, collection } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js';
+
+        const firebaseConfig = {
+            apiKey: "AIzaSyAT2acMkrTKsMMaW2aR5aGLTMdYQbje7i8",
+            authDomain: "qr-ordering-system-c80d4.firebaseapp.com",
+            projectId: "qr-ordering-system-c80d4",
+            storageBucket: "qr-ordering-system-c80d4.firebasestorage.app",
+            messagingSenderId: "380518528753",
+            appId: "1:380518528753:web:4893e0ed933138b5f99b50",
+            measurementId: "G-6T9PQMLRY9"
+        };
+
+        const app = initializeApp(firebaseConfig);
+        const auth = getAuth(app);
+        const db = getFirestore(app);
+
+        window.initializeFirebase = async function () {
+            const results = document.getElementById('results');
+            results.innerHTML = '<h2>Initializing Firebase...</h2>';
+
+            try {
+                // Step 1: Create admin user in Firebase Auth
+                results.innerHTML += '<h3>Step 1: Creating Admin User</h3>';
+                let userId;
+
+                try {
+                    const userCredential = await createUserWithEmailAndPassword(
+                        auth,
+                        'psunil@asu.edu',
+                        'user123'
+                    );
+                    userId = userCredential.user.uid;
+                    results.innerHTML += `<p class="success">✓ Admin user created with UID: ${userId}</p>`;
+                } catch (error) {
+                    if (error.code === 'auth/email-already-in-use') {
+                        results.innerHTML += '<p class="success">✓ Admin user already exists</p>';
+                        // For existing user, we'll use a placeholder UID
+                        userId = 'existing-user'; // This will need to be updated manually
+                    } else {
+                        throw error;
+                    }
+                }
+
+                // Step 2: Create restaurant document
+                results.innerHTML += '<h3>Step 2: Creating Restaurant</h3>';
+                const restaurantData = {
+                    name: "The Gourmet Kitchen",
+                    taxRate: 0.08,
+                    currency: "USD",
+                    coordinates: {
+                        latitude: 33.4242,
+                        longitude: -111.9281
+                    },
+                    isActive: true,
+                    layoutConfigured: false,
+                    createdAt: new Date(),
+                    updatedAt: new Date()
+                };
+
+                await setDoc(doc(db, 'restaurants', 'rest_001'), restaurantData);
+                results.innerHTML += '<p class="success">✓ Restaurant created with ID: rest_001</p>';
+                results.innerHTML += `<pre>${JSON.stringify(restaurantData, null, 2)}</pre>`;
+
+                // Step 3: Create user document
+                results.innerHTML += '<h3>Step 3: Creating User Profile</h3>';
+                const userData = {
+                    email: 'psunil@asu.edu',
+                    name: 'user1',
+                    role: 'admin',
+                    restaurantId: 'rest_001',
+                    isActive: true,
+                    createdAt: new Date()
+                };
+
+                // Note: If user already exists, you'll need to get the actual UID
+                if (userId !== 'existing-user') {
+                    await setDoc(doc(db, 'users', userId), userData);
+                    results.innerHTML += `<p class="success">✓ User profile created</p>`;
+                } else {
+                    results.innerHTML += '<p class="error">⚠️ User already exists. Please manually create the user document with the correct UID.</p>';
+                    results.innerHTML += '<p>You can find the UID in Firebase Console > Authentication > Users</p>';
+                }
+                results.innerHTML += `<pre>${JSON.stringify(userData, null, 2)}</pre>`;
+
+                // Step 4: Add sample menu items
+                results.innerHTML += '<h3>Step 4: Adding Sample Menu Items</h3>';
+                const sampleMenuItems = [
+                    {
+                        restaurantId: 'rest_001',
+                        name: 'Grilled Salmon',
+                        description: 'Fresh Atlantic salmon with lemon butter sauce',
+                        price: 24.99,
+                        category: 'Entrees',
+                        isAvailable: true,
+                        createdAt: new Date()
+                    },
+                    {
+                        restaurantId: 'rest_001',
+                        name: 'Caesar Salad',
+                        description: 'Crisp romaine lettuce with parmesan and croutons',
+                        price: 12.99,
+                        category: 'Appetizers',
+                        isAvailable: true,
+                        createdAt: new Date()
+                    },
+                    {
+                        restaurantId: 'rest_001',
+                        name: 'Chocolate Lava Cake',
+                        description: 'Warm chocolate cake with vanilla ice cream',
+                        price: 8.99,
+                        category: 'Desserts',
+                        isAvailable: true,
+                        createdAt: new Date()
+                    },
+                    {
+                        restaurantId: 'rest_001',
+                        name: 'Ribeye Steak',
+                        description: '12oz premium ribeye with garlic butter',
+                        price: 32.99,
+                        category: 'Entrees',
+                        isAvailable: true,
+                        createdAt: new Date()
+                    },
+                    {
+                        restaurantId: 'rest_001',
+                        name: 'Bruschetta',
+                        description: 'Toasted bread with tomatoes and basil',
+                        price: 9.99,
+                        category: 'Appetizers',
+                        isAvailable: true,
+                        createdAt: new Date()
+                    }
+                ];
+
+                for (let i = 0; i < sampleMenuItems.length; i++) {
+                    await setDoc(doc(collection(db, 'menu_items')), sampleMenuItems[i]);
+                }
+                results.innerHTML += `<p class="success">✓ Added ${sampleMenuItems.length} sample menu items</p>`;
+
+                results.innerHTML += '<h2 class="success">✅ Initialization Complete!</h2>';
+                results.innerHTML += '<p><strong>You can now log in with:</strong></p>';
+                results.innerHTML += '<pre>Email: psunil@asu.edu\nPassword: user123</pre>';
+                results.innerHTML += '<p>Navigate to: <a href="http://localhost:5173/login">http://localhost:5173/login</a></p>';
+
+            } catch (error) {
+                results.innerHTML += `<h2 class="error">❌ Error</h2>`;
+                results.innerHTML += `<p class="error">${error.message}</p>`;
+                results.innerHTML += `<pre>${error.stack}</pre>`;
+                console.error('Initialization error:', error);
+            }
+        };
+    </script>
+</body>
+
+</html>
