@@ -7,7 +7,6 @@ import {
     where,
     getDocs,
     orderBy,
-    limit,
     Timestamp,
 } from 'firebase/firestore';
 import type { TableSession, Order } from '@/types';
@@ -21,6 +20,7 @@ import {
     TableRow,
 } from '@/components/ui/table';
 import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog';
 import { Receipt, Calendar } from 'lucide-react';
 
@@ -28,6 +28,9 @@ export default function PastBillsPage() {
     const { restaurantId } = useAuth();
     const [sessions, setSessions] = useState<TableSession[]>([]);
     const [loading, setLoading] = useState(true);
+    const [filterType, setFilterType] = useState<'day' | 'month'>('day');
+    const [selectedDate, setSelectedDate] = useState(new Date().toISOString().split('T')[0]);
+    const [selectedMonth, setSelectedMonth] = useState(new Date().toISOString().slice(0, 7));
     const [selectedSession, setSelectedSession] = useState<{ session: TableSession, orders: Order[] } | null>(null);
     const [detailsOpen, setDetailsOpen] = useState(false);
     const [detailsLoading, setDetailsLoading] = useState(false);
@@ -36,20 +39,39 @@ export default function PastBillsPage() {
         if (restaurantId) {
             loadPastSessions();
         }
-    }, [restaurantId]);
+    }, [restaurantId, filterType, selectedDate, selectedMonth]);
+
+    const getDateRange = () => {
+        let start: Date, end: Date;
+
+        if (filterType === 'day') {
+            start = new Date(selectedDate);
+            start.setHours(0, 0, 0, 0);
+            end = new Date(selectedDate);
+            end.setHours(23, 59, 59, 999);
+        } else {
+            const [year, month] = selectedMonth.split('-').map(Number);
+            start = new Date(year, month - 1, 1);
+            end = new Date(year, month, 0, 23, 59, 59, 999);
+        }
+        return { start, end };
+    };
 
     const loadPastSessions = async () => {
         if (!restaurantId) return;
+        setLoading(true);
         const sessionsRef = collection(db, 'sessions');
+        const { start, end } = getDateRange();
+
         try {
-            // Note: Composite index might be needed for this query
-            // restaurantId + status + createdAt
+            // Try server-side filtering
             const q = query(
                 sessionsRef,
                 where('restaurantId', '==', restaurantId),
                 where('status', '==', 'closed'),
-                orderBy('createdAt', 'desc'),
-                limit(50)
+                where('createdAt', '>=', start),
+                where('createdAt', '<=', end),
+                orderBy('createdAt', 'desc')
             );
 
             const snapshot = await getDocs(q);
@@ -59,8 +81,8 @@ export default function PastBillsPage() {
             });
             setSessions(loadedSessions);
         } catch (error) {
-            console.error('Error loading past sessions:', error);
-            // Fallback if index is missing: fetch all closed and sort client-side (not ideal for large data but works for now)
+            console.error('Error loading past sessions (index might be missing):', error);
+            // Fallback: fetch all closed and filter client-side
             try {
                 const qFallback = query(
                     sessionsRef,
@@ -70,7 +92,12 @@ export default function PastBillsPage() {
                 const snapshot = await getDocs(qFallback);
                 const loadedSessions: TableSession[] = [];
                 snapshot.forEach((doc) => {
-                    loadedSessions.push({ id: doc.id, ...doc.data() } as TableSession);
+                    const data = doc.data() as TableSession;
+                    const createdAt = data.createdAt instanceof Timestamp ? data.createdAt.toDate() : new Date(data.createdAt);
+
+                    if (createdAt >= start && createdAt <= end) {
+                        loadedSessions.push({ ...data, id: doc.id });
+                    }
                 });
 
                 loadedSessions.sort((a, b) => {
@@ -142,8 +169,45 @@ export default function PastBillsPage() {
 
     return (
         <div className="space-y-6">
-            <div className="flex items-center justify-between">
+            <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
                 <h1 className="text-3xl font-bold">Past Bills</h1>
+
+                <div className="flex items-center gap-2 bg-white p-2 rounded-lg border shadow-sm">
+                    <div className="flex rounded-md bg-muted p-1">
+                        <Button
+                            variant={filterType === 'day' ? 'default' : 'ghost'}
+                            size="sm"
+                            onClick={() => setFilterType('day')}
+                            className="h-8"
+                        >
+                            Daily
+                        </Button>
+                        <Button
+                            variant={filterType === 'month' ? 'default' : 'ghost'}
+                            size="sm"
+                            onClick={() => setFilterType('month')}
+                            className="h-8"
+                        >
+                            Monthly
+                        </Button>
+                    </div>
+
+                    {filterType === 'day' ? (
+                        <Input
+                            type="date"
+                            value={selectedDate}
+                            onChange={(e) => setSelectedDate(e.target.value)}
+                            className="w-40 h-9"
+                        />
+                    ) : (
+                        <Input
+                            type="month"
+                            value={selectedMonth}
+                            onChange={(e) => setSelectedMonth(e.target.value)}
+                            className="w-40 h-9"
+                        />
+                    )}
+                </div>
                 <Button variant="outline" onClick={loadPastSessions}>
                     Refresh
                 </Button>

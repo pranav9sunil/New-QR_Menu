@@ -7,11 +7,12 @@ import {
     where,
     getDocs,
     addDoc,
-    updateDoc,
     doc,
     limit,
     serverTimestamp,
     getDoc,
+    updateDoc,
+    deleteField,
 } from 'firebase/firestore';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -23,8 +24,10 @@ import type { TableSession } from '@/types';
 export default function CustomerSignup() {
     const [searchParams] = useSearchParams();
     const navigate = useNavigate();
-    const tableName = searchParams.get('table');
+    const tableParam = searchParams.get('table');
+    const tableIdParam = searchParams.get('tableId');
 
+    const [tableName, setTableName] = useState(tableParam || '');
     const [name, setName] = useState('');
     const [phone, setPhone] = useState('');
     const [step, setStep] = useState<'signup' | 'verify'>('signup');
@@ -34,32 +37,56 @@ export default function CustomerSignup() {
     const [sessionId, setSessionId] = useState<string | null>(null);
     const [restaurantId, setRestaurantId] = useState<string | null>(null);
     const [tableId, setTableId] = useState<string | null>(null);
+    const [checkingTable, setCheckingTable] = useState(true);
 
     useEffect(() => {
-        if (!tableName) {
+        if (!tableParam && !tableIdParam) {
             navigate('/');
             return;
         }
         checkActiveSession();
-    }, [tableName]);
+    }, [tableParam, tableIdParam]);
 
     const checkActiveSession = async () => {
-        if (!tableName) return;
-
+        setCheckingTable(true);
         try {
-            // Find table first
-            const tablesRef = collection(db, 'tables');
-            const qTable = query(tablesRef, where('name', '==', tableName), limit(1));
-            const tableSnap = await getDocs(qTable);
+            let tId = tableIdParam;
+            let tName = tableParam;
+            let rId = '';
 
-            if (tableSnap.empty) {
-                setError('Invalid table');
-                return;
+            if (tId) {
+                // Fetch by ID
+                const tableDoc = await getDoc(doc(db, 'tables', tId));
+                if (!tableDoc.exists()) {
+                    setError('Invalid table ID');
+                    setCheckingTable(false);
+                    return;
+                }
+                const data = tableDoc.data();
+                tName = data?.name || '';
+                rId = data?.restaurantId || '';
+                setTableName(tName);
+            } else if (tName) {
+                // Fetch by Name (Legacy support)
+                const tablesRef = collection(db, 'tables');
+                const qTable = query(tablesRef, where('name', '==', tName), limit(1));
+                const tableSnap = await getDocs(qTable);
+
+                if (tableSnap.empty) {
+                    setError('Invalid table name');
+                    setCheckingTable(false);
+                    return;
+                }
+                const tableDoc = tableSnap.docs[0];
+                tId = tableDoc.id;
+                rId = tableDoc.data().restaurantId || '';
             }
 
-            const tableData = tableSnap.docs[0].data();
-            const tId = tableSnap.docs[0].id;
-            const rId = tableData.restaurantId;
+            if (!tId || !rId) {
+                setError('Table configuration error');
+                setCheckingTable(false);
+                return;
+            }
 
             setTableId(tId);
             setRestaurantId(rId);
@@ -80,6 +107,8 @@ export default function CustomerSignup() {
         } catch (err) {
             console.error('Error checking session:', err);
             setError('Failed to load session');
+        } finally {
+            setCheckingTable(false);
         }
     };
 
@@ -108,6 +137,11 @@ export default function CustomerSignup() {
                 const docRef = await addDoc(collection(db, 'sessions'), sessionData);
                 currentSessionId = docRef.id;
                 setSessionId(currentSessionId);
+
+                // Clear reservation if exists
+                await updateDoc(doc(db, 'tables', tableId), {
+                    reservation: deleteField()
+                });
             }
 
             // Add customer to session subcollection
@@ -159,6 +193,14 @@ export default function CustomerSignup() {
             setLoading(false);
         }
     };
+
+    if (checkingTable) {
+        return (
+            <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+                <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary"></div>
+            </div>
+        );
+    }
 
     return (
         <div className="min-h-screen bg-gray-50 flex items-center justify-center p-4">

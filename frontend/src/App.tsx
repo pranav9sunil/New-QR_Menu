@@ -10,6 +10,8 @@ import CustomerLanding from './pages/customer/CustomerLanding';
 import MenuOrderPage from './pages/customer/MenuOrderPage';
 import CustomerSignup from './pages/customer/CustomerSignup';
 import PastBillsPage from '@/pages/admin/PastBillsPage';
+import KitchenPage from './pages/admin/KitchenPage';
+import AccountsPage from './pages/admin/AccountsPage';
 
 function App() {
   return (
@@ -35,6 +37,8 @@ function App() {
             <Route path="layout" element={<TableLayoutPage />} />
             <Route path="qr-codes" element={<QRCodePage />} />
             <Route path="menu" element={<MenuManagementPage />} />
+            <Route path="kitchen" element={<KitchenPage />} />
+            <Route path="accounts" element={<AccountsPage />} />
             <Route path="bills" element={<PastBillsPage />} />
           </Route>
 

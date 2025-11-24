@@ -12,10 +12,11 @@ import {
     updateDoc,
     onSnapshot,
 } from 'firebase/firestore';
-import type { MenuItem, CartItem } from '@/types';
+import type { MenuItem, CartItem, Order } from '@/types';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { ChefHat, ShoppingCart, Plus, Minus, Trash2, Receipt } from 'lucide-react';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { ChefHat, ShoppingCart, Plus, Minus, Trash2, Receipt, Download, Flame, Info } from 'lucide-react';
+import { jsPDF } from 'jspdf';
 import {
     Dialog,
     DialogContent,
@@ -39,6 +40,8 @@ export default function MenuOrderPage() {
     const [cartOpen, setCartOpen] = useState(false);
     const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
     const [sessionId, setSessionId] = useState<string | null>(null);
+    const [isSessionClosed, setIsSessionClosed] = useState(false);
+    const [billOrders, setBillOrders] = useState<Order[]>([]);
 
     useEffect(() => {
         const storedSessionId = localStorage.getItem('sessionId');
@@ -51,15 +54,20 @@ export default function MenuOrderPage() {
 
         // Listen for session status changes
         const sessionRef = doc(db, 'sessions', storedSessionId);
-        const unsubscribe = onSnapshot(sessionRef, (docSnap) => {
+        const unsubscribe = onSnapshot(sessionRef, async (docSnap) => {
             if (docSnap.exists()) {
                 const data = docSnap.data();
                 if (data.status === 'closed') {
-                    alert('Session closed by server. Thank you for dining with us!');
-                    localStorage.removeItem('sessionId');
-                    localStorage.removeItem('customerName');
-                    localStorage.removeItem('customerPhone');
-                    navigate('/');
+                    // Fetch final orders
+                    const ordersRef = collection(db, 'orders');
+                    const q = query(ordersRef, where('sessionId', '==', storedSessionId));
+                    const snapshot = await getDocs(q);
+                    const orders: Order[] = [];
+                    snapshot.forEach((doc) => {
+                        orders.push({ id: doc.id, ...doc.data() } as Order);
+                    });
+                    setBillOrders(orders);
+                    setIsSessionClosed(true);
                 }
             } else {
                 // Session deleted?
@@ -200,6 +208,60 @@ export default function MenuOrderPage() {
         }
     };
 
+    const handleDownloadBill = () => {
+        const doc = new jsPDF();
+        let yPos = 20;
+
+        // Header
+        doc.setFontSize(20);
+        doc.text(restaurantName, 105, yPos, { align: 'center' });
+        yPos += 10;
+        doc.setFontSize(12);
+        doc.text('Receipt', 105, yPos, { align: 'center' });
+        yPos += 10;
+        doc.text(`Table: ${tableName}`, 20, yPos);
+        doc.text(`Date: ${new Date().toLocaleDateString()}`, 150, yPos);
+        yPos += 15;
+
+        // Items
+        doc.line(20, yPos, 190, yPos);
+        yPos += 10;
+
+        let subtotal = 0;
+        billOrders.forEach(order => {
+            order.items.forEach(item => {
+                doc.text(item.name, 20, yPos);
+                doc.text(`${item.quantity}x`, 130, yPos);
+                doc.text(`$${(item.price * item.quantity).toFixed(2)}`, 190, yPos, { align: 'right' });
+                yPos += 7;
+                subtotal += item.price * item.quantity;
+            });
+        });
+
+        yPos += 5;
+        doc.line(20, yPos, 190, yPos);
+        yPos += 10;
+
+        const tax = subtotal * taxRate;
+        const total = subtotal + tax;
+
+        doc.text(`Subtotal: $${subtotal.toFixed(2)}`, 190, yPos, { align: 'right' });
+        yPos += 7;
+        doc.text(`Tax: $${tax.toFixed(2)}`, 190, yPos, { align: 'right' });
+        yPos += 10;
+        doc.setFontSize(14);
+        doc.text(`Total: $${total.toFixed(2)}`, 190, yPos, { align: 'right' });
+
+        doc.save('receipt.pdf');
+    };
+
+    const handleLeave = () => {
+        localStorage.removeItem('sessionId');
+        localStorage.removeItem('customerName');
+        localStorage.removeItem('customerPhone');
+        navigate('/');
+    };
+
     if (loading) {
         return (
             <div className="min-h-screen flex items-center justify-center">
@@ -302,22 +364,68 @@ export default function MenuOrderPage() {
                                 </CardContent>
                             </Card>
                         ) : (
-                            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                            <div className="space-y-4">
                                 {displayedItems.map((item) => (
-                                    <Card key={item.id} className="hover:shadow-lg transition-shadow">
-                                        <CardHeader>
-                                            <CardTitle>{item.name}</CardTitle>
-                                            <CardDescription>{item.description}</CardDescription>
-                                        </CardHeader>
-                                        <CardContent>
-                                            <div className="flex items-center justify-between">
-                                                <span className="text-2xl font-bold text-primary">
-                                                    ${item.price.toFixed(2)}
-                                                </span>
-                                                <Button onClick={() => addToCart(item)} size="sm">
-                                                    <Plus className="h-4 w-4 mr-1" />
-                                                    Add
-                                                </Button>
+                                    <Card key={item.id} className="hover:shadow-lg transition-shadow overflow-hidden">
+                                        <CardContent className="p-0 flex flex-col sm:flex-row">
+                                            {item.imageUrl && (
+                                                <div className="w-full sm:w-48 h-48 sm:h-auto relative shrink-0 bg-gray-100">
+                                                    <img
+                                                        src={item.imageUrl}
+                                                        alt={item.name}
+                                                        className="w-full h-full object-cover"
+                                                        onError={(e) => {
+                                                            (e.target as HTMLImageElement).src = 'https://placehold.co/400x300?text=No+Image';
+                                                        }}
+                                                    />
+                                                </div>
+                                            )}
+                                            <div className="flex-1 p-6 flex flex-col justify-between">
+                                                <div>
+                                                    <div className="flex justify-between items-start mb-2">
+                                                        <h3 className="font-bold text-xl">{item.name}</h3>
+                                                        {item.isChefSpecial && (
+                                                            <div className="flex items-center text-amber-600 text-xs font-medium bg-amber-50 px-2 py-1 rounded-full border border-amber-200">
+                                                                <ChefHat className="w-3 h-3 mr-1" />
+                                                                Chef's Special
+                                                            </div>
+                                                        )}
+                                                    </div>
+
+                                                    <p className="text-muted-foreground mb-3 line-clamp-2">{item.description}</p>
+
+                                                    <div className="flex flex-wrap gap-2 mb-3 items-center">
+                                                        {(item.spiceLevel || 0) > 0 && (
+                                                            <div className="flex text-red-500 bg-red-50 px-2 py-1 rounded-full border border-red-100" title={`Spice Level: ${item.spiceLevel}`}>
+                                                                {Array.from({ length: item.spiceLevel || 0 }).map((_, i) => (
+                                                                    <Flame key={i} className="w-3 h-3 fill-current" />
+                                                                ))}
+                                                            </div>
+                                                        )}
+                                                        {item.dietary?.map(tag => (
+                                                            <span key={tag} className="px-2 py-1 bg-green-50 text-green-700 text-xs rounded-full border border-green-200 capitalize font-medium">
+                                                                {tag}
+                                                            </span>
+                                                        ))}
+                                                    </div>
+
+                                                    {item.allergens && item.allergens.length > 0 && (
+                                                        <div className="flex items-center text-xs text-muted-foreground mt-2">
+                                                            <Info className="w-3 h-3 mr-1" />
+                                                            <span className="font-medium mr-1">Contains:</span> {item.allergens.join(', ')}
+                                                        </div>
+                                                    )}
+                                                </div>
+
+                                                <div className="flex items-center justify-between mt-4 pt-4 border-t">
+                                                    <span className="text-xl font-bold text-primary">
+                                                        ${item.price.toFixed(2)}
+                                                    </span>
+                                                    <Button onClick={() => addToCart(item)} size="sm">
+                                                        <Plus className="h-4 w-4 mr-1" />
+                                                        Add to Order
+                                                    </Button>
+                                                </div>
                                             </div>
                                         </CardContent>
                                     </Card>
@@ -414,6 +522,43 @@ export default function MenuOrderPage() {
                     )}
                 </DialogContent>
             </Dialog>
-        </div>
+
+            {/* Bill / Session Closed Dialog */}
+            <Dialog open={isSessionClosed} onOpenChange={() => { }}>
+                <DialogContent className="max-w-md bg-white" onPointerDownOutside={(e) => e.preventDefault()}>
+                    <DialogHeader>
+                        <DialogTitle className="text-center text-2xl">Thank You!</DialogTitle>
+                        <DialogDescription className="text-center">
+                            Your session has been closed. We hope you enjoyed your meal.
+                        </DialogDescription>
+                    </DialogHeader>
+
+                    <div className="py-6 space-y-4">
+                        <div className="bg-slate-50 p-4 rounded-lg space-y-2">
+                            <div className="flex justify-between font-medium">
+                                <span>Total Paid</span>
+                                <span>
+                                    ${(billOrders.reduce((sum, order) => sum + order.total, 0)).toFixed(2)}
+                                </span>
+                            </div>
+                            <p className="text-xs text-muted-foreground text-center pt-2">
+                                A copy of your receipt is available for download.
+                            </p>
+                        </div>
+
+                        <Button onClick={handleDownloadBill} className="w-full" variant="outline">
+                            <Download className="h-4 w-4 mr-2" />
+                            Download Receipt PDF
+                        </Button>
+                    </div>
+
+                    <DialogFooter>
+                        <Button onClick={handleLeave} className="w-full">
+                            Return to Home
+                        </Button>
+                    </DialogFooter>
+                </DialogContent>
+            </Dialog>
+        </div >
     );
 }

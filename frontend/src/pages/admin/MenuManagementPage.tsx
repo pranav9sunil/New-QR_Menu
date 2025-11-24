@@ -37,6 +37,11 @@ export default function MenuManagementPage() {
         description: '',
         price: '',
         category: '',
+        imageUrl: '',
+        dietary: [] as string[],
+        spiceLevel: '0',
+        isChefSpecial: false,
+        allergens: '',
     });
 
     useEffect(() => {
@@ -77,6 +82,11 @@ export default function MenuManagementPage() {
                 description: formData.description,
                 price: parseFloat(formData.price),
                 category: formData.category,
+                imageUrl: formData.imageUrl,
+                dietary: formData.dietary,
+                spiceLevel: parseInt(formData.spiceLevel),
+                isChefSpecial: formData.isChefSpecial,
+                allergens: formData.allergens.split(',').map(s => s.trim()).filter(s => s),
                 isAvailable: true,
                 createdAt: new Date(),
             };
@@ -106,7 +116,17 @@ export default function MenuManagementPage() {
     };
 
     const resetForm = () => {
-        setFormData({ name: '', description: '', price: '', category: '' });
+        setFormData({
+            name: '',
+            description: '',
+            price: '',
+            category: '',
+            imageUrl: '',
+            dietary: [],
+            spiceLevel: '0',
+            isChefSpecial: false,
+            allergens: '',
+        });
         setEditingItem(null);
         setDialogOpen(false);
     };
@@ -118,6 +138,11 @@ export default function MenuManagementPage() {
             description: item.description,
             price: item.price.toString(),
             category: item.category,
+            imageUrl: item.imageUrl || '',
+            dietary: item.dietary || [],
+            spiceLevel: (item.spiceLevel || 0).toString(),
+            isChefSpecial: item.isChefSpecial || false,
+            allergens: (item.allergens || []).join(', '),
         });
         setDialogOpen(true);
     };
@@ -235,7 +260,7 @@ export default function MenuManagementPage() {
 
             {/* Add/Edit Dialog */}
             <Dialog open={dialogOpen} onOpenChange={(open) => !open && resetForm()}>
-                <DialogContent>
+                <DialogContent className="bg-white">
                     <DialogHeader>
                         <DialogTitle>{editingItem ? 'Edit Menu Item' : 'Add Menu Item'}</DialogTitle>
                         <DialogDescription>
@@ -286,6 +311,76 @@ export default function MenuManagementPage() {
                                 required
                                 placeholder="e.g., Appetizers, Entrees, Desserts"
                             />
+                        </div>
+
+                        <div className="space-y-2">
+                            <Label htmlFor="imageUrl">Image URL</Label>
+                            <Input
+                                id="imageUrl"
+                                value={formData.imageUrl}
+                                onChange={(e) => setFormData({ ...formData, imageUrl: e.target.value })}
+                                placeholder="https://example.com/image.jpg"
+                            />
+                        </div>
+
+                        <div className="grid grid-cols-2 gap-4">
+                            <div className="space-y-2">
+                                <Label htmlFor="spiceLevel">Spice Level (0-3)</Label>
+                                <select
+                                    id="spiceLevel"
+                                    className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+                                    value={formData.spiceLevel}
+                                    onChange={(e) => setFormData({ ...formData, spiceLevel: e.target.value })}
+                                >
+                                    <option value="0">No Spice</option>
+                                    <option value="1">Mild</option>
+                                    <option value="2">Medium</option>
+                                    <option value="3">Hot</option>
+                                </select>
+                            </div>
+
+                            <div className="space-y-2">
+                                <Label htmlFor="allergens">Allergens (comma separated)</Label>
+                                <Input
+                                    id="allergens"
+                                    value={formData.allergens}
+                                    onChange={(e) => setFormData({ ...formData, allergens: e.target.value })}
+                                    placeholder="e.g. Nuts, Dairy, Soy"
+                                />
+                            </div>
+                        </div>
+
+                        <div className="space-y-2">
+                            <Label>Dietary Tags</Label>
+                            <div className="flex gap-4">
+                                {['vegetarian', 'vegan', 'gluten-free'].map((tag) => (
+                                    <label key={tag} className="flex items-center space-x-2">
+                                        <input
+                                            type="checkbox"
+                                            checked={formData.dietary.includes(tag)}
+                                            onChange={(e) => {
+                                                const newDietary = e.target.checked
+                                                    ? [...formData.dietary, tag]
+                                                    : formData.dietary.filter((t) => t !== tag);
+                                                setFormData({ ...formData, dietary: newDietary });
+                                            }}
+                                            className="h-4 w-4 rounded border-gray-300 text-primary focus:ring-primary"
+                                        />
+                                        <span className="capitalize">{tag}</span>
+                                    </label>
+                                ))}
+                            </div>
+                        </div>
+
+                        <div className="flex items-center space-x-2">
+                            <input
+                                type="checkbox"
+                                id="isChefSpecial"
+                                checked={formData.isChefSpecial}
+                                onChange={(e) => setFormData({ ...formData, isChefSpecial: e.target.checked })}
+                                className="h-4 w-4 rounded border-gray-300 text-primary focus:ring-primary"
+                            />
+                            <Label htmlFor="isChefSpecial">Chef's Special</Label>
                         </div>
 
                         <DialogFooter>

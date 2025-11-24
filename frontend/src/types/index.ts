@@ -34,6 +34,12 @@ export interface Table {
         y: number;
     };
     isActive: boolean;
+    reservation?: {
+        name: string;
+        phone: string;
+        guests: number;
+        time: string;
+    };
     qrCodeUrl?: string;
     createdAt: Date;
 }
@@ -48,6 +54,9 @@ export interface MenuItem {
     imageUrl?: string;
     isAvailable: boolean;
     allergens?: string[];
+    dietary?: ('vegetarian' | 'vegan' | 'gluten-free')[];
+    spiceLevel?: 0 | 1 | 2 | 3;
+    isChefSpecial?: boolean;
     createdAt: Date;
 }
 
@@ -93,4 +102,5 @@ export interface TableSession {
     createdAt: Date;
     customers?: SessionCustomer[];
     totalAmount?: number;
+    closedAt?: Date;
 }

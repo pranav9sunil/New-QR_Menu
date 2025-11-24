@@ -67,7 +67,7 @@ export default function QRCodePage() {
 
     const generateQRCode = async (table: Table) => {
         try {
-            const url = `${window.location.origin}/order?table=${encodeURIComponent(table.name)}`;
+            const url = `${window.location.origin}/signup?tableId=${table.id}`;
             const dataUrl = await QRCode.toDataURL(url, {
                 width: 400,
                 margin: 2,
@@ -84,7 +84,7 @@ export default function QRCodePage() {
 
     const downloadQRCode = async (table: Table) => {
         try {
-            const url = `${window.location.origin}/order?table=${encodeURIComponent(table.name)}`;
+            const url = `${window.location.origin}/signup?tableId=${table.id}`;
             const dataUrl = await QRCode.toDataURL(url, {
                 width: 800,
                 margin: 2,
@@ -151,7 +151,7 @@ export default function QRCodePage() {
 
             {/* QR Code Modal */}
             <Dialog open={!!selectedTable} onOpenChange={(open) => !open && setSelectedTable(null)}>
-                <DialogContent className="max-w-md">
+                <DialogContent className="max-w-md bg-white">
                     <DialogHeader>
                         <DialogTitle className="flex items-center gap-2">
                             <QrCodeIcon className="h-5 w-5" />
@@ -200,7 +200,7 @@ function QRCodeCard({ table, onViewQR, onDownloadQR }: QRCodeCardProps) {
     useEffect(() => {
         const generatePreview = async () => {
             try {
-                const url = `${window.location.origin}/order?table=${encodeURIComponent(table.name)}`;
+                const url = `${window.location.origin}/signup?tableId=${table.id}`;
                 const dataUrl = await QRCode.toDataURL(url, {
                     width: 150,
                     margin: 1,

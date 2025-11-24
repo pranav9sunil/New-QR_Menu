@@ -11,6 +11,7 @@ import {
     Settings,
     MenuSquare,
     Receipt,
+    BarChart3,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import SettingsModal from './SettingsModal';
@@ -33,6 +34,11 @@ export default function AdminLayout() {
             path: '/admin/layout',
         },
         {
+            label: 'Live Kitchen',
+            icon: ChefHat,
+            path: '/admin/kitchen',
+        },
+        {
             label: 'QR Codes',
             icon: QrCode,
             path: '/admin/qr-codes',
@@ -41,6 +47,11 @@ export default function AdminLayout() {
             label: 'Menu Management',
             icon: MenuSquare,
             path: '/admin/menu',
+        },
+        {
+            label: 'Accounts',
+            icon: BarChart3,
+            path: '/admin/accounts',
         },
     ];
 

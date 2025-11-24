@@ -178,27 +178,7 @@ export default function CustomerLanding() {
                     </Card>
                 </div>
 
-                {/* Features */}
-                <div className="mt-16 max-w-3xl mx-auto">
-                    <h3 className="text-2xl font-bold text-center mb-8">Why Choose Us?</h3>
-                    <div className="grid md:grid-cols-3 gap-6 text-center">
-                        <div>
-                            <div className="text-4xl mb-3">🚀</div>
-                            <h4 className="font-semibold mb-2">Fast Service</h4>
-                            <p className="text-sm text-gray-600">Order directly from your table without waiting</p>
-                        </div>
-                        <div>
-                            <div className="text-4xl mb-3">📱</div>
-                            <h4 className="font-semibold mb-2">Contactless</h4>
-                            <p className="text-sm text-gray-600">Scan, order, and pay - all from your phone</p>
-                        </div>
-                        <div>
-                            <div className="text-4xl mb-3">✨</div>
-                            <h4 className="font-semibold mb-2">Easy to Use</h4>
-                            <p className="text-sm text-gray-600">Intuitive interface for seamless ordering</p>
-                        </div>
-                    </div>
-                </div>
+
             </div>
         </div>
     );
