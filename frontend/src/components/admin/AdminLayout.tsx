@@ -12,6 +12,8 @@ import {
     MenuSquare,
     Receipt,
     BarChart3,
+    Wine,
+    Printer,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import SettingsModal from './SettingsModal';
@@ -39,9 +41,19 @@ export default function AdminLayout() {
             path: '/admin/kitchen',
         },
         {
-            label: 'QR Codes',
-            icon: QrCode,
-            path: '/admin/qr-codes',
+            label: 'Live Bar',
+            icon: Wine,
+            path: '/admin/bar',
+        },
+        {
+            label: 'Live Bills',
+            icon: Receipt,
+            path: '/admin/live-bills',
+        },
+        {
+            label: 'Printers',
+            icon: Printer,
+            path: '/admin/printers',
         },
         {
             label: 'Menu Management',
@@ -52,6 +64,16 @@ export default function AdminLayout() {
             label: 'Accounts',
             icon: BarChart3,
             path: '/admin/accounts',
+        },
+        {
+            label: 'Past Bills',
+            icon: Receipt,
+            path: '/admin/bills',
+        },
+        {
+            label: 'QR Codes',
+            icon: QrCode,
+            path: '/admin/qr-codes',
         },
     ];
 
@@ -129,13 +151,7 @@ export default function AdminLayout() {
                                     </Link>
                                 );
                             })}
-                            <Link
-                                to="/admin/bills"
-                                className="flex items-center gap-3 px-3 py-2 text-sm font-medium text-gray-700 rounded-md hover:bg-gray-100"
-                            >
-                                <Receipt className="h-5 w-5" />
-                                Past Bills
-                            </Link>
+
                         </nav>
                     </div>
                 </aside>

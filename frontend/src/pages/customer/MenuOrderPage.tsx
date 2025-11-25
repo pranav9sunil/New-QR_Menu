@@ -10,12 +10,13 @@ import {
     where,
     doc,
     updateDoc,
+    serverTimestamp,
     onSnapshot,
 } from 'firebase/firestore';
 import type { MenuItem, CartItem, Order } from '@/types';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { ChefHat, ShoppingCart, Plus, Minus, Trash2, Receipt, Download, Flame, Info } from 'lucide-react';
+import { Card, CardContent } from '@/components/ui/card';
+import { ChefHat, ShoppingCart, Plus, Minus, Trash2, Receipt, Download, Search, History, CheckCircle2, ChevronDown } from 'lucide-react';
 import { jsPDF } from 'jspdf';
 import {
     Dialog,
@@ -42,6 +43,32 @@ export default function MenuOrderPage() {
     const [sessionId, setSessionId] = useState<string | null>(null);
     const [isSessionClosed, setIsSessionClosed] = useState(false);
     const [billOrders, setBillOrders] = useState<Order[]>([]);
+
+    // Search & Filter State
+    const [searchQuery, setSearchQuery] = useState('');
+    const [showFilters, setShowFilters] = useState(false);
+    const [activeFilters, setActiveFilters] = useState({
+        veg: false,
+        nonVeg: false,
+        vegan: false,
+        gf: false,
+        spiceLevel: null as number | null,
+        chefSpecial: false,
+        bestseller: false,
+    });
+
+    // Customization Modal State
+    const [customizationModalOpen, setCustomizationModalOpen] = useState(false);
+    const [selectedItem, setSelectedItem] = useState<MenuItem | null>(null);
+    const [customizationSelections, setCustomizationSelections] = useState<Record<string, any[]>>({});
+    const [itemNotes, setItemNotes] = useState('');
+
+    // Past Orders Modal State
+    const [pastOrdersOpen, setPastOrdersOpen] = useState(false);
+    const [pastOrders, setPastOrders] = useState<Order[]>([]);
+
+    // Mobile Category Modal State
+    const [mobileCategoryModalOpen, setMobileCategoryModalOpen] = useState(false);
 
     useEffect(() => {
         const storedSessionId = localStorage.getItem('sessionId');
@@ -112,19 +139,25 @@ export default function MenuOrderPage() {
         }
     };
 
-    const addToCart = (item: MenuItem) => {
-        const existingItem = cart.find((cartItem) => cartItem.id === item.id);
+    const addToCart = (item: MenuItem | CartItem) => {
+        // If it's a custom item (has notes or customizations), always add as new
+        if ('selectedCustomizations' in item || 'notes' in item) {
+            setCart([...cart, { ...item, quantity: 1, id: `${item.id}-${Date.now()}` } as CartItem]);
+            return;
+        }
+
+        const existingItem = cart.find((cartItem) => cartItem.id === item.id && !cartItem.selectedCustomizations);
 
         if (existingItem) {
             setCart(
                 cart.map((cartItem) =>
-                    cartItem.id === item.id
+                    cartItem.id === item.id && !cartItem.selectedCustomizations
                         ? { ...cartItem, quantity: cartItem.quantity + 1 }
                         : cartItem
                 )
             );
         } else {
-            setCart([...cart, { ...item, quantity: 1 }]);
+            setCart([...cart, { ...item, quantity: 1 } as CartItem]);
         }
     };
 
@@ -172,12 +205,13 @@ export default function MenuOrderPage() {
                     name: item.name,
                     price: item.price,
                     quantity: item.quantity,
+                    category: item.category,
                 })),
                 status: 'pending',
                 subtotal,
                 tax,
                 total,
-                createdAt: new Date(),
+                createdAt: serverTimestamp(),
             };
 
             await addDoc(collection(db, 'orders'), order);
@@ -195,6 +229,74 @@ export default function MenuOrderPage() {
     const displayedItems = selectedCategory
         ? menuItems.filter((item) => item.category === selectedCategory)
         : menuItems;
+
+    const filteredItems = displayedItems.filter(item => {
+        const matchesSearch = item.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+            item.description.toLowerCase().includes(searchQuery.toLowerCase());
+
+        if (!matchesSearch) return false;
+
+        if (activeFilters.veg && !item.dietary?.includes('vegetarian')) return false;
+        if (activeFilters.nonVeg && !item.dietary?.includes('non-vegetarian')) return false;
+        if (activeFilters.vegan && !item.dietary?.includes('vegan')) return false;
+        if (activeFilters.gf && !item.dietary?.includes('gluten-free')) return false;
+        if (activeFilters.chefSpecial && !item.isChefSpecial) return false;
+        if (activeFilters.bestseller && !item.isBestseller) return false;
+        if (activeFilters.spiceLevel !== null && item.spiceLevel !== activeFilters.spiceLevel) return false;
+
+        return true;
+    });
+
+    const handleAddToCartClick = (item: MenuItem) => {
+        if (item.customizationOptions && item.customizationOptions.length > 0) {
+            setSelectedItem(item);
+            setCustomizationSelections({});
+            setItemNotes('');
+            setCustomizationModalOpen(true);
+        } else {
+            addToCart(item);
+        }
+    };
+
+    const handleConfirmCustomization = () => {
+        if (!selectedItem) return;
+
+        const customPrice = selectedItem.price + Object.values(customizationSelections).flat().reduce((sum, opt) => sum + opt.price, 0);
+
+        const customItem: CartItem = {
+            ...selectedItem,
+            quantity: 1,
+            selectedCustomizations: customizationSelections,
+            notes: itemNotes,
+            price: customPrice
+        };
+
+        addToCart(customItem);
+        setCustomizationModalOpen(false);
+        setSelectedItem(null);
+    };
+
+    const handleFetchPastOrders = async () => {
+        if (!sessionId) return;
+        setLoading(true);
+        try {
+            const ordersRef = collection(db, 'orders');
+            const q = query(ordersRef, where('sessionId', '==', sessionId));
+            const snapshot = await getDocs(q);
+            const orders: Order[] = [];
+            snapshot.forEach((doc) => {
+                orders.push({ id: doc.id, ...doc.data() } as Order);
+            });
+            // Sort by date desc
+            orders.sort((a, b) => (b.createdAt as any).seconds - (a.createdAt as any).seconds);
+            setPastOrders(orders);
+            setPastOrdersOpen(true);
+        } catch (error) {
+            console.error("Error fetching past orders", error);
+        } finally {
+            setLoading(false);
+        }
+    };
 
     const handleRequestBill = async () => {
         if (!sessionId) return;
@@ -271,43 +373,54 @@ export default function MenuOrderPage() {
     }
 
     return (
-        <div className="min-h-screen bg-gray-50">
+        <div className="min-h-screen bg-white">
             {/* Navbar */}
-            <header className="sticky top-0 z-40 border-b bg-white shadow-sm">
+            <header className="sticky top-0 z-40 bg-gradient-to-r from-orange-500 to-red-500 shadow-md">
                 <div className="container mx-auto px-4">
                     <div className="flex h-16 items-center justify-between">
                         <button
                             onClick={() => navigate('/')}
                             className="flex items-center gap-2 hover:opacity-80 transition-opacity"
                         >
-                            <div className="w-10 h-10 bg-primary rounded-lg flex items-center justify-center">
-                                <ChefHat className="w-6 h-6 text-primary-foreground" />
+                            <div className="w-10 h-10 bg-white/20 backdrop-blur-sm rounded-lg flex items-center justify-center">
+                                <ChefHat className="w-6 h-6 text-white" />
                             </div>
                             <div className="text-left hidden sm:block">
-                                <div className="font-semibold">{restaurantName}</div>
-                                <div className="text-xs text-muted-foreground">{tableName}</div>
+                                <div className="font-semibold text-white">{restaurantName}</div>
+                                <div className="text-xs text-white/80">{tableName}</div>
                             </div>
                         </button>
+
 
                         <div className="flex items-center gap-2">
                             <Button
                                 onClick={handleRequestBill}
                                 variant="outline"
-                                className="border-primary text-primary hover:bg-primary/10"
+                                className="border-white text-white hover:bg-white/20 transition-colors"
                             >
                                 <Receipt className="h-5 w-5 mr-2" />
                                 Ready to Pay
                             </Button>
-                            <Button onClick={() => setCartOpen(true)} variant="outline" className="relative">
-                                <ShoppingCart className="h-5 w-5 mr-2" />
-                                Cart
-                                {cart.length > 0 && (
-                                    <span className="absolute -top-1 -right-1 bg-destructive text-destructive-foreground rounded-full w-5 h-5 text-xs flex items-center justify-center">
-                                        {cart.reduce((sum, item) => sum + item.quantity, 0)}
-                                    </span>
-                                )}
-                            </Button>
-                        </div>
+                            <div className="flex items-center gap-2">
+                                <Button className="relative bg-white text-orange-600 hover:bg-white/90 shadow-md font-semibold" onClick={() => setCartOpen(true)}>
+                                    <ShoppingCart className="h-5 w-5 mr-2" />
+                                    Cart
+                                    {cart.length > 0 && (
+                                        <span className="absolute -top-2 -right-2 bg-red-600 text-white text-xs font-bold rounded-full h-5 w-5 flex items-center justify-center shadow-lg">
+                                            {cart.reduce((sum, item) => sum + item.quantity, 0)}
+                                        </span>
+                                    )}
+                                </Button>
+                                <Button
+                                    variant="outline"
+                                    size="icon"
+                                    onClick={handleFetchPastOrders}
+                                    className="border-white/30 text-white hover:bg-white/20 bg-white/10"
+                                    title="Past Orders"
+                                >
+                                    <History className="h-5 w-5" />
+                                </Button>
+                            </div>                   </div>
                     </div>
                 </div>
             </header>
@@ -316,119 +429,256 @@ export default function MenuOrderPage() {
                 <div className="flex gap-6">
                     {/* Category Navigation */}
                     {categories.length > 0 && (
-                        <aside className="hidden lg:block w-64 sticky top-20 h-fit">
-                            <Card>
-                                <CardHeader>
-                                    <CardTitle className="text-lg">Categories</CardTitle>
-                                </CardHeader>
-                                <CardContent className="p-0">
-                                    <nav className="space-y-1">
+                        <aside className="hidden lg:block w-64 pr-6">
+                            <div className="space-y-1">
+                                <h2 className="text-sm font-semibold text-gray-500 uppercase tracking-wider mb-3 px-4">Categories</h2>
+                                <nav className="space-y-1">
+                                    <button
+                                        onClick={() => setSelectedCategory(null)}
+                                        className={`w-full text-left px-4 py-2.5 hover:bg-orange-50 transition-colors text-sm font-medium ${!selectedCategory
+                                            ? 'text-orange-600 bg-orange-50 border-l-4 border-orange-600'
+                                            : 'text-gray-700 border-l-4 border-transparent'
+                                            }`}
+                                    >
+                                        All Items
+                                    </button>
+                                    {categories.map((category) => (
                                         <button
-                                            onClick={() => setSelectedCategory(null)}
-                                            className={`w-full text-left px-4 py-2 hover:bg-accent transition-colors ${!selectedCategory ? 'bg-accent font-medium' : ''
+                                            key={category}
+                                            onClick={() => setSelectedCategory(category)}
+                                            className={`w-full text-left px-4 py-2.5 hover:bg-orange-50 transition-colors text-sm font-medium ${selectedCategory === category
+                                                ? 'text-orange-600 bg-orange-50 border-l-4 border-orange-600'
+                                                : 'text-gray-700 border-l-4 border-transparent'
                                                 }`}
                                         >
-                                            All Items
+                                            {category}
                                         </button>
-                                        {categories.map((category) => (
-                                            <button
-                                                key={category}
-                                                onClick={() => setSelectedCategory(category)}
-                                                className={`w-full text-left px-4 py-2 hover:bg-accent transition-colors ${selectedCategory === category ? 'bg-accent font-medium' : ''
-                                                    }`}
-                                            >
-                                                {category}
-                                            </button>
-                                        ))}
-                                    </nav>
-                                </CardContent>
-                            </Card>
+                                    ))}
+                                </nav>
+                            </div>
                         </aside>
                     )}
 
-                    {/* Menu Items */}
                     <div className="flex-1">
+                        {/* Search and Filters */}
+                        <div className="mb-6">
+                            <div className="flex gap-2">
+                                <div className="relative flex-1">
+                                    <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-muted-foreground h-4 w-4" />
+                                    <input
+                                        type="text"
+                                        placeholder="Search menu..."
+                                        className="w-full pl-10 pr-4 py-2 border border-orange-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-orange-500 bg-white"
+                                        value={searchQuery}
+                                        onChange={(e) => setSearchQuery(e.target.value)}
+                                    />
+                                </div>
+
+                                <div className="relative">
+                                    <Button
+                                        variant="outline"
+                                        size="sm"
+                                        onClick={() => setShowFilters(!showFilters)}
+                                        className="h-full px-4 border-orange-200 hover:bg-orange-50"
+                                    >
+                                        <span className="hidden sm:inline mr-2">Filters</span>
+                                        <ChevronDown className={`h-4 w-4 transition-transform ${showFilters ? 'rotate-180' : ''}`} />
+                                    </Button>
+
+                                    {showFilters && (
+                                        <div className="absolute right-0 mt-2 p-4 border border-orange-200 rounded-lg bg-white shadow-lg z-10 w-64 grid grid-cols-2 gap-2">
+                                            <label className="flex items-center space-x-2">
+                                                <input
+                                                    type="checkbox"
+                                                    checked={activeFilters.veg}
+                                                    onChange={() => setActiveFilters(prev => ({ ...prev, veg: !prev.veg }))}
+                                                    className="rounded border-gray-300 text-green-600 focus:ring-green-500"
+                                                />
+                                                <span className="text-sm">Vegetarian</span>
+                                            </label>
+                                            <label className="flex items-center space-x-2">
+                                                <input
+                                                    type="checkbox"
+                                                    checked={activeFilters.nonVeg}
+                                                    onChange={() => setActiveFilters(prev => ({ ...prev, nonVeg: !prev.nonVeg }))}
+                                                    className="rounded border-gray-300 text-red-600 focus:ring-red-500"
+                                                />
+                                                <span className="text-sm">Non-Veg</span>
+                                            </label>
+                                            <label className="flex items-center space-x-2">
+                                                <input
+                                                    type="checkbox"
+                                                    checked={activeFilters.vegan}
+                                                    onChange={() => setActiveFilters(prev => ({ ...prev, vegan: !prev.vegan }))}
+                                                    className="rounded border-gray-300 text-green-600 focus:ring-green-500"
+                                                />
+                                                <span className="text-sm">Vegan</span>
+                                            </label>
+                                            <label className="flex items-center space-x-2">
+                                                <input
+                                                    type="checkbox"
+                                                    checked={activeFilters.gf}
+                                                    onChange={() => setActiveFilters(prev => ({ ...prev, gf: !prev.gf }))}
+                                                    className="rounded border-gray-300 text-amber-600 focus:ring-amber-500"
+                                                />
+                                                <span className="text-sm">Gluten Free</span>
+                                            </label>
+                                            <label className="flex items-center space-x-2 col-span-2">
+                                                <input
+                                                    type="checkbox"
+                                                    checked={activeFilters.chefSpecial}
+                                                    onChange={() => setActiveFilters(prev => ({ ...prev, chefSpecial: !prev.chefSpecial }))}
+                                                    className="rounded border-gray-300 text-orange-600 focus:ring-orange-500"
+                                                />
+                                                <span className="text-sm">Chef's Special</span>
+                                            </label>
+                                            <label className="flex items-center space-x-2 col-span-2">
+                                                <input
+                                                    type="checkbox"
+                                                    checked={activeFilters.bestseller}
+                                                    onChange={() => setActiveFilters(prev => ({ ...prev, bestseller: !prev.bestseller }))}
+                                                    className="rounded border-gray-300 text-orange-600 focus:ring-orange-500"
+                                                />
+                                                <span className="text-sm">Bestseller</span>
+                                            </label>
+                                        </div>
+                                    )}
+                                </div>
+                            </div>
+                        </div>
+
                         <div className="mb-6">
                             <h1 className="text-3xl font-bold">
                                 {selectedCategory || 'Our Menu'}
                             </h1>
                             <p className="text-muted-foreground">
-                                {displayedItems.length} {displayedItems.length === 1 ? 'item' : 'items'}
+                                {filteredItems.length} {filteredItems.length === 1 ? 'item' : 'items'}
                             </p>
                         </div>
 
-                        {displayedItems.length === 0 ? (
+                        {filteredItems.length === 0 ? (
                             <Card>
                                 <CardContent className="py-12 text-center text-muted-foreground">
-                                    <p>No menu items available at the moment.</p>
+                                    <p>No menu items found matching your criteria.</p>
                                 </CardContent>
                             </Card>
                         ) : (
-                            <div className="space-y-4">
-                                {displayedItems.map((item) => (
-                                    <Card key={item.id} className="hover:shadow-lg transition-shadow overflow-hidden">
-                                        <CardContent className="p-0 flex flex-col sm:flex-row">
-                                            {item.imageUrl && (
-                                                <div className="w-full sm:w-48 h-48 sm:h-auto relative shrink-0 bg-gray-100">
-                                                    <img
-                                                        src={item.imageUrl}
-                                                        alt={item.name}
-                                                        className="w-full h-full object-cover"
-                                                        onError={(e) => {
-                                                            (e.target as HTMLImageElement).src = 'https://placehold.co/400x300?text=No+Image';
-                                                        }}
-                                                    />
-                                                </div>
-                                            )}
-                                            <div className="flex-1 p-6 flex flex-col justify-between">
-                                                <div>
-                                                    <div className="flex justify-between items-start mb-2">
-                                                        <h3 className="font-bold text-xl">{item.name}</h3>
-                                                        {item.isChefSpecial && (
-                                                            <div className="flex items-center text-amber-600 text-xs font-medium bg-amber-50 px-2 py-1 rounded-full border border-amber-200">
-                                                                <ChefHat className="w-3 h-3 mr-1" />
-                                                                Chef's Special
+                            <div className="space-y-0">
+                                {Object.entries(filteredItems.reduce((acc, item) => {
+                                    const cat = item.category || 'Other';
+                                    if (!acc[cat]) acc[cat] = [];
+                                    acc[cat].push(item);
+                                    return acc;
+                                }, {} as Record<string, MenuItem[]>)).map(([category, items]) => (
+                                    <div key={category}>
+                                        <h2 className="text-2xl font-bold mb-3 pb-2 text-gray-800 border-b-2 border-orange-200">{category}</h2>
+                                        <div>
+                                            {items.map((item, index) => (
+                                                <div key={item.id}>
+                                                    <div className="py-2.5 flex gap-3">
+                                                        {/* Left Content */}
+                                                        <div className="flex-1 space-y-1">
+                                                            <div className="flex items-start justify-between">
+                                                                <div className="flex items-center gap-2">
+                                                                    {item.dietary?.includes('non-vegetarian') ? (
+                                                                        <div className="border border-red-600 p-[2px] rounded-sm" title="Non-Vegetarian">
+                                                                            <div className="w-2 h-2 bg-red-600 rounded-full" />
+                                                                        </div>
+                                                                    ) : (
+                                                                        <div className="border border-green-600 p-[2px] rounded-sm" title="Vegetarian">
+                                                                            <div className="w-2 h-2 bg-green-600 rounded-full" />
+                                                                        </div>
+                                                                    )}
+                                                                    <h3 className="font-bold text-lg">{item.name}</h3>
+
+                                                                    {/* Chef's Special and Bestseller Badges */}
+                                                                    <div className="flex items-center gap-1.5">
+                                                                        {item.isChefSpecial && (
+                                                                            <div className="bg-gradient-to-r from-orange-100 to-red-100 text-orange-700 text-sm px-1.5 py-0.5 rounded-full font-bold border border-orange-200 flex items-center" title="Chef's Special">
+                                                                                <ChefHat className="w-3.5 h-3.5" />
+                                                                            </div>
+                                                                        )}
+                                                                        {item.isBestseller && (
+                                                                            <div className="bg-gradient-to-r from-orange-100 to-red-100 text-orange-700 text-sm px-1.5 py-0.5 rounded-full font-bold border border-orange-200" title="Bestseller">
+                                                                                ⭐
+                                                                            </div>
+                                                                        )}
+                                                                    </div>
+                                                                </div>
                                                             </div>
-                                                        )}
-                                                    </div>
+                                                            <div className="font-bold text-orange-600 text-base">${item.price.toFixed(2)}</div>
+                                                            <p className="text-sm text-muted-foreground line-clamp-2 leading-snug">{item.description}</p>
 
-                                                    <p className="text-muted-foreground mb-3 line-clamp-2">{item.description}</p>
-
-                                                    <div className="flex flex-wrap gap-2 mb-3 items-center">
-                                                        {(item.spiceLevel || 0) > 0 && (
-                                                            <div className="flex text-red-500 bg-red-50 px-2 py-1 rounded-full border border-red-100" title={`Spice Level: ${item.spiceLevel}`}>
-                                                                {Array.from({ length: item.spiceLevel || 0 }).map((_, i) => (
-                                                                    <Flame key={i} className="w-3 h-3 fill-current" />
-                                                                ))}
+                                                            {/* Dietary Badges */}
+                                                            <div className="flex flex-wrap gap-1.5 mt-1.5">
+                                                                {item.dietary?.includes('vegan') && (
+                                                                    <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs bg-green-50 text-green-700 border border-green-200">
+                                                                        🌱 Vegan
+                                                                    </span>
+                                                                )}
+                                                                {item.dietary?.includes('vegetarian') && !item.dietary?.includes('vegan') && (
+                                                                    <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs bg-green-50 text-green-700 border border-green-200">
+                                                                        🥬 Vegetarian
+                                                                    </span>
+                                                                )}
+                                                                {item.dietary?.includes('gluten-free') && (
+                                                                    <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs bg-amber-50 text-amber-700 border border-amber-200">
+                                                                        🌾 Gluten-Free
+                                                                    </span>
+                                                                )}
+                                                                {/* Spice Level */}
+                                                                {item.spiceLevel !== undefined && item.spiceLevel > 0 && (
+                                                                    <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs bg-red-50 text-red-700 border border-red-200">
+                                                                        {item.spiceLevel === 1 && '🌶️'}
+                                                                        {item.spiceLevel === 2 && '🌶️🌶️'}
+                                                                        {item.spiceLevel === 3 && '🌶️🌶️🌶️'}
+                                                                    </span>
+                                                                )}
                                                             </div>
-                                                        )}
-                                                        {item.dietary?.map(tag => (
-                                                            <span key={tag} className="px-2 py-1 bg-green-50 text-green-700 text-xs rounded-full border border-green-200 capitalize font-medium">
-                                                                {tag}
-                                                            </span>
-                                                        ))}
-                                                    </div>
-
-                                                    {item.allergens && item.allergens.length > 0 && (
-                                                        <div className="flex items-center text-xs text-muted-foreground mt-2">
-                                                            <Info className="w-3 h-3 mr-1" />
-                                                            <span className="font-medium mr-1">Contains:</span> {item.allergens.join(', ')}
                                                         </div>
+
+                                                        {/* Right Image & Button */}
+                                                        <div className="w-32 shrink-0">
+                                                            <div className="relative w-full h-32">
+                                                                {item.imageUrl ? (
+                                                                    <img
+                                                                        src={item.imageUrl}
+                                                                        alt={item.name}
+                                                                        className="w-full h-full object-cover rounded-xl"
+                                                                    />
+                                                                ) : (
+                                                                    <div className="w-full h-full bg-gradient-to-br from-orange-100 to-red-100 rounded-xl flex items-center justify-center text-orange-400">
+                                                                        <ChefHat className="w-7 h-7" />
+                                                                    </div>
+                                                                )}
+
+                                                                {/* ADD button overlapping image */}
+                                                                <div className="absolute -bottom-3 left-1/2 transform -translate-x-1/2">
+                                                                    <Button
+                                                                        className="w-24 bg-green-600 text-white hover:bg-green-700 border-none shadow-sm font-bold h-8 uppercase text-sm rounded-lg transition-all duration-300"
+                                                                        onClick={() => handleAddToCartClick(item)}
+                                                                    >
+                                                                        ADD
+                                                                    </Button>
+                                                                </div>
+                                                            </div>
+
+                                                            {/* Customisable text below */}
+                                                            <div className="mt-3 text-center h-4">
+                                                                {item.customizationOptions && item.customizationOptions.length > 0 && (
+                                                                    <span className="text-[11px] text-gray-500">Customisable</span>
+                                                                )}
+                                                            </div>
+                                                        </div>
+                                                    </div>
+                                                    {/* Separator line - not for last item in category */}
+                                                    {index < items.length - 1 && (
+                                                        <div className="border-b border-gray-200" />
                                                     )}
                                                 </div>
-
-                                                <div className="flex items-center justify-between mt-4 pt-4 border-t">
-                                                    <span className="text-xl font-bold text-primary">
-                                                        ${item.price.toFixed(2)}
-                                                    </span>
-                                                    <Button onClick={() => addToCart(item)} size="sm">
-                                                        <Plus className="h-4 w-4 mr-1" />
-                                                        Add to Order
-                                                    </Button>
-                                                </div>
-                                            </div>
-                                        </CardContent>
-                                    </Card>
+                                            ))}
+                                        </div>
+                                    </div>
                                 ))}
                             </div>
                         )}
@@ -559,6 +809,245 @@ export default function MenuOrderPage() {
                     </DialogFooter>
                 </DialogContent>
             </Dialog>
+
+            {/* Customization Modal */}
+            <Dialog open={customizationModalOpen} onOpenChange={setCustomizationModalOpen}>
+                <DialogContent className="max-w-md max-h-[90vh] flex flex-col bg-white p-0 gap-0">
+                    {selectedItem && (
+                        <>
+                            <div className="p-6 border-b">
+                                <DialogHeader>
+                                    <div className="flex justify-between items-start">
+                                        <div>
+                                            <DialogTitle className="text-xl font-bold">{selectedItem.name}</DialogTitle>
+                                            <DialogDescription className="mt-1 text-base text-gray-600">
+                                                ${selectedItem.price.toFixed(2)}
+                                            </DialogDescription>
+                                        </div>
+                                        {selectedItem.dietary?.includes('vegetarian') ? (
+                                            <div className="border border-green-600 p-[2px] rounded-sm">
+                                                <div className="w-2 h-2 bg-green-600 rounded-full" />
+                                            </div>
+                                        ) : (
+                                            <div className="border border-red-600 p-[2px] rounded-sm">
+                                                <div className="w-2 h-2 bg-red-600 rounded-full" />
+                                            </div>
+                                        )}
+                                    </div>
+                                </DialogHeader>
+                            </div>
+
+                            <div className="flex-1 overflow-y-auto p-6 space-y-6">
+                                {/* Customization Groups */}
+                                {selectedItem.customizationOptions?.map((group) => (
+                                    <div key={group.id} className="space-y-3">
+                                        <div className="flex justify-between items-center">
+                                            <h3 className="font-bold text-lg">{group.name}</h3>
+                                            <span className="text-sm text-muted-foreground">
+                                                {group.type === 'single' ? 'Select 1' : `Select up to ${group.maxSelection || 'any'}`}
+                                            </span>
+                                        </div>
+                                        <div className="space-y-2">
+                                            {group.options.map((option) => {
+                                                const isSelected = customizationSelections[group.id]?.some(opt => opt.name === option.name);
+                                                return (
+                                                    <div key={option.name} className="flex items-center justify-between py-2">
+                                                        <div className="flex items-center space-x-3">
+                                                            {group.type === 'single' ? (
+                                                                <div
+                                                                    className={`w-5 h-5 rounded-full border flex items-center justify-center cursor-pointer ${isSelected ? 'border-green-600' : 'border-gray-300'}`}
+                                                                    onClick={() => {
+                                                                        setCustomizationSelections(prev => ({
+                                                                            ...prev,
+                                                                            [group.id]: [option]
+                                                                        }));
+                                                                    }}
+                                                                >
+                                                                    {isSelected && <div className="w-2.5 h-2.5 bg-green-600 rounded-full" />}
+                                                                </div>
+                                                            ) : (
+                                                                <div
+                                                                    className={`w-5 h-5 rounded border flex items-center justify-center cursor-pointer ${isSelected ? 'bg-green-600 border-green-600' : 'border-gray-300'}`}
+                                                                    onClick={() => {
+                                                                        setCustomizationSelections(prev => {
+                                                                            const current = prev[group.id] || [];
+                                                                            if (isSelected) {
+                                                                                return { ...prev, [group.id]: current.filter(o => o.name !== option.name) };
+                                                                            } else {
+                                                                                if (group.maxSelection && current.length >= group.maxSelection) return prev;
+                                                                                return { ...prev, [group.id]: [...current, option] };
+                                                                            }
+                                                                        });
+                                                                    }}
+                                                                >
+                                                                    {isSelected && <CheckCircle2 className="w-3.5 h-3.5 text-white" />}
+                                                                </div>
+                                                            )}
+                                                            <div className="flex flex-col">
+                                                                <span className="font-medium">{option.name}</span>
+                                                                <div className="flex gap-1">
+                                                                    {option.isVegetarian && <span className="text-[10px] text-green-600 border border-green-200 px-1 rounded">Veg</span>}
+                                                                    {option.isVegan && <span className="text-[10px] text-green-600 border border-green-200 px-1 rounded">Vegan</span>}
+                                                                    {option.isGlutenFree && <span className="text-[10px] text-amber-600 border border-amber-200 px-1 rounded">GF</span>}
+                                                                </div>
+                                                            </div>
+                                                        </div>
+                                                        <span className="text-sm text-gray-600">
+                                                            {option.price > 0 ? `+ $${option.price.toFixed(2)}` : 'Free'}
+                                                        </span>
+                                                    </div>
+                                                );
+                                            })}
+                                        </div>
+                                    </div>
+                                ))}
+
+                                {/* Notes Section */}
+                                <div className="space-y-3 pt-4 border-t">
+                                    <h3 className="font-bold text-lg">Special Requests</h3>
+                                    <textarea
+                                        className="w-full min-h-[100px] p-3 border rounded-lg resize-none focus:outline-none focus:ring-2 focus:ring-primary"
+                                        placeholder="Add notes for the kitchen (e.g. no onions, extra spicy)..."
+                                        value={itemNotes}
+                                        onChange={(e) => setItemNotes(e.target.value)}
+                                    />
+                                </div>
+                            </div>
+
+                            <div className="p-4 border-t bg-gray-50">
+                                <Button
+                                    className="w-full h-12 text-lg font-bold bg-green-600 hover:bg-green-700"
+                                    onClick={handleConfirmCustomization}
+                                >
+                                    Add Item to Cart - $
+                                    {(selectedItem.price + Object.values(customizationSelections).flat().reduce((sum, opt) => sum + opt.price, 0)).toFixed(2)}
+                                </Button>
+                            </div>
+                        </>
+                    )}
+                </DialogContent>
+            </Dialog>
+
+            {/* Past Orders Modal */}
+            <Dialog open={pastOrdersOpen} onOpenChange={setPastOrdersOpen}>
+                <DialogContent className="max-w-md max-h-[80vh] flex flex-col bg-white">
+                    <DialogHeader>
+                        <DialogTitle className="flex items-center gap-2">
+                            <History className="h-5 w-5" />
+                            Past Orders
+                        </DialogTitle>
+                        <DialogDescription>
+                            Your order history for this session
+                        </DialogDescription>
+                    </DialogHeader>
+
+                    <div className="flex-1 overflow-y-auto space-y-4 py-4">
+                        {pastOrders.length === 0 ? (
+                            <div className="text-center text-muted-foreground py-8">
+                                <p>No past orders found.</p>
+                            </div>
+                        ) : (
+                            pastOrders.map((order) => (
+                                <div key={order.id} className="border rounded-lg p-4 space-y-3">
+                                    <div className="flex justify-between items-center pb-2 border-b">
+                                        <span className="font-medium text-sm text-muted-foreground">
+                                            {order.createdAt && (order.createdAt as any).toDate ?
+                                                (order.createdAt as any).toDate().toLocaleDateString() + ' ' +
+                                                (order.createdAt as any).toDate().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) :
+                                                'Invalid Date'
+                                            }
+                                        </span>
+                                        <span className={`px-2 py-1 rounded-full text-xs font-medium capitalize
+                                            ${order.status === 'completed' ? 'bg-green-100 text-green-700' :
+                                                order.status === 'preparing' ? 'bg-blue-100 text-blue-700' :
+                                                    order.status === 'ready' ? 'bg-purple-100 text-purple-700' :
+                                                        'bg-yellow-100 text-yellow-700'}`}>
+                                            {order.status}
+                                        </span>
+                                    </div>
+                                    <div className="space-y-2">
+                                        {order.items.map((item, idx) => (
+                                            <div key={idx} className="flex justify-between text-sm">
+                                                <span>{item.quantity}x {item.name}</span>
+                                                <span>${(item.price * item.quantity).toFixed(2)}</span>
+                                            </div>
+                                        ))}
+                                    </div>
+                                    <div className="pt-2 border-t flex justify-between font-bold">
+                                        <span>Total</span>
+                                        <span>${order.total.toFixed(2)}</span>
+                                    </div>
+                                </div>
+                            ))
+                        )}
+                    </div>
+                </DialogContent>
+            </Dialog>
+
+            {/* Floating MENU Button (Mobile Only) */}
+            {categories.length > 0 && (
+                <button
+                    onClick={() => setMobileCategoryModalOpen(true)}
+                    className="lg:hidden fixed bottom-6 right-6 z-50 bg-black text-white rounded-full w-16 h-16 flex items-center justify-center shadow-lg font-bold text-sm hover:bg-gray-800 transition-colors"
+                >
+                    MENU
+                </button>
+            )}
+
+            {/* Mobile Category Navigation Modal */}
+            {mobileCategoryModalOpen && (
+                <>
+                    {/* Backdrop */}
+                    <div
+                        className="lg:hidden fixed inset-0 bg-black/50 z-40"
+                        onClick={() => setMobileCategoryModalOpen(false)}
+                    />
+                    {/* Modal Content */}
+                    <div className="lg:hidden fixed bottom-0 left-0 right-0 z-50 bg-gray-900 text-white rounded-t-3xl shadow-2xl max-h-[70vh] overflow-y-auto">
+                        <div className="sticky top-0 bg-gray-900 px-6 py-4 border-b border-gray-800 flex justify-between items-center">
+                            <h2 className="text-xl font-bold">Menu Categories</h2>
+                            <button
+                                onClick={() => setMobileCategoryModalOpen(false)}
+                                className="text-gray-400 hover:text-white"
+                            >
+                                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                                </svg>
+                            </button>
+                        </div>
+                        <div className="px-6 py-4 space-y-2 pb-24">
+                            <button
+                                onClick={() => {
+                                    setSelectedCategory(null);
+                                    setMobileCategoryModalOpen(false);
+                                }}
+                                className={`w-full text-left px-4 py-3 rounded-lg hover:bg-gray-800 transition-colors flex justify-between items-center ${!selectedCategory ? 'bg-gray-800' : ''
+                                    }`}
+                            >
+                                <span className="font-medium">All Items</span>
+                                <span className="text-sm text-gray-400">{menuItems.length}</span>
+                            </button>
+                            {categories.map((category) => {
+                                const count = menuItems.filter(item => item.category === category).length;
+                                return (
+                                    <button
+                                        key={category}
+                                        onClick={() => {
+                                            setSelectedCategory(category);
+                                            setMobileCategoryModalOpen(false);
+                                        }}
+                                        className={`w-full text-left px-4 py-3 rounded-lg hover:bg-gray-800 transition-colors flex justify-between items-center ${selectedCategory === category ? 'bg-gray-800' : ''
+                                            }`}
+                                    >
+                                        <span className="font-medium">{category}</span>
+                                        <span className="text-sm text-gray-400">{count}</span>
+                                    </button>
+                                );
+                            })}
+                        </div>
+                    </div>
+                </>
+            )}
         </div >
     );
 }

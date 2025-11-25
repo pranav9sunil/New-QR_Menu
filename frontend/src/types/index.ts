@@ -44,6 +44,23 @@ export interface Table {
     createdAt: Date;
 }
 
+export interface CustomizationOption {
+    name: string;
+    price: number;
+    isVegetarian?: boolean;
+    isVegan?: boolean;
+    isGlutenFree?: boolean;
+}
+
+export interface CustomizationGroup {
+    id: string;
+    name: string;
+    type: 'single' | 'multiple';
+    minSelection?: number;
+    maxSelection?: number;
+    options: CustomizationOption[];
+}
+
 export interface MenuItem {
     id: string;
     restaurantId: string;
@@ -54,9 +71,11 @@ export interface MenuItem {
     imageUrl?: string;
     isAvailable: boolean;
     allergens?: string[];
-    dietary?: ('vegetarian' | 'vegan' | 'gluten-free')[];
+    dietary: ('vegan' | 'vegetarian' | 'gluten-free' | 'non-vegetarian')[];
     spiceLevel?: 0 | 1 | 2 | 3;
     isChefSpecial?: boolean;
+    isBestseller?: boolean;
+    customizationOptions?: CustomizationGroup[];
     createdAt: Date;
 }
 
@@ -71,6 +90,9 @@ export interface Order {
     subtotal: number;
     tax: number;
     total: number;
+    discount?: number;
+    discountType?: 'percentage' | 'fixed';
+    manualOrder?: boolean;
     createdAt: Date;
 }
 
@@ -79,10 +101,15 @@ export interface OrderItem {
     name: string;
     price: number;
     quantity: number;
+    category?: string;
+    selectedCustomizations?: { name: string; price: number }[];
+    notes?: string;
 }
 
 export interface CartItem extends MenuItem {
     quantity: number;
+    selectedCustomizations?: Record<string, CustomizationOption[]>;
+    notes?: string;
 }
 
 export interface SessionCustomer {
