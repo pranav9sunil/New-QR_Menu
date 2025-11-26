@@ -11,7 +11,7 @@ import {
     deleteDoc,
     doc as firestoreDoc,
 } from 'firebase/firestore';
-import type { MenuItem } from '@/types';
+import type { MenuItem, CustomizationGroup } from '@/types';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -24,7 +24,7 @@ import {
     DialogHeader,
     DialogTitle,
 } from '@/components/ui/dialog';
-import { Plus, Edit2, Trash2 } from 'lucide-react';
+import { Plus, Edit2, Trash2, X } from 'lucide-react';
 
 export default function MenuManagementPage() {
     const { restaurantId } = useAuth();
@@ -42,6 +42,7 @@ export default function MenuManagementPage() {
         spiceLevel: '0',
         isChefSpecial: false,
         allergens: '',
+        customizationOptions: [] as CustomizationGroup[],
     });
 
     useEffect(() => {
@@ -87,6 +88,7 @@ export default function MenuManagementPage() {
                 spiceLevel: parseInt(formData.spiceLevel),
                 isChefSpecial: formData.isChefSpecial,
                 allergens: formData.allergens.split(',').map(s => s.trim()).filter(s => s),
+                customizationOptions: formData.customizationOptions,
                 isAvailable: true,
                 createdAt: new Date(),
             };
@@ -126,9 +128,103 @@ export default function MenuManagementPage() {
             spiceLevel: '0',
             isChefSpecial: false,
             allergens: '',
+            customizationOptions: [],
         });
         setEditingItem(null);
         setDialogOpen(false);
+    };
+
+    const addCustomizationGroup = () => {
+        const newGroup: CustomizationGroup = {
+            id: Math.random().toString(36).substr(2, 9),
+            name: '',
+            type: 'single',
+            minSelection: 1,
+            maxSelection: 1,
+            options: [],
+        };
+        setFormData({
+            ...formData,
+            customizationOptions: [...(formData.customizationOptions || []), newGroup],
+        });
+    };
+
+    const removeCustomizationGroup = (groupId: string) => {
+        setFormData({
+            ...formData,
+            customizationOptions: formData.customizationOptions.filter((g) => g.id !== groupId),
+        });
+    };
+
+    const updateCustomizationGroup = (groupId: string, field: keyof CustomizationGroup, value: any) => {
+        setFormData({
+            ...formData,
+            customizationOptions: formData.customizationOptions.map((g) => {
+                if (g.id === groupId) {
+                    const updated = { ...g, [field]: value };
+                    if (field === 'type') {
+                        if (value === 'single') {
+                            updated.minSelection = 1;
+                            updated.maxSelection = 1;
+                        } else {
+                            updated.minSelection = 0;
+                            updated.maxSelection = undefined;
+                        }
+                    }
+                    return updated;
+                }
+                return g;
+            }),
+        });
+    };
+
+    const addOptionToGroup = (groupId: string) => {
+        setFormData({
+            ...formData,
+            customizationOptions: formData.customizationOptions.map((g) => {
+                if (g.id === groupId) {
+                    return {
+                        ...g,
+                        options: [...g.options, { name: '', price: 0 }],
+                    };
+                }
+                return g;
+            }),
+        });
+    };
+
+    const removeOptionFromGroup = (groupId: string, optionIndex: number) => {
+        setFormData({
+            ...formData,
+            customizationOptions: formData.customizationOptions.map((g) => {
+                if (g.id === groupId) {
+                    return {
+                        ...g,
+                        options: g.options.filter((_, idx) => idx !== optionIndex),
+                    };
+                }
+                return g;
+            }),
+        });
+    };
+
+    const updateOption = (
+        groupId: string,
+        optionIndex: number,
+        field: keyof import('@/types').CustomizationOption,
+        value: any
+    ) => {
+        setFormData({
+            ...formData,
+            customizationOptions: formData.customizationOptions.map((g) => {
+                if (g.id === groupId) {
+                    const newOptions = [...g.options];
+                    newOptions[optionIndex] = { ...newOptions[optionIndex], [field]: value };
+                    return { ...g, options: newOptions };
+                }
+                return g;
+            }),
+        });
     };
 
     const startEdit = (item: MenuItem) => {
@@ -143,6 +239,7 @@ export default function MenuManagementPage() {
             spiceLevel: (item.spiceLevel || 0).toString(),
             isChefSpecial: item.isChefSpecial || false,
             allergens: (item.allergens || []).join(', '),
+            customizationOptions: item.customizationOptions || [],
         });
         setDialogOpen(true);
     };
@@ -260,7 +357,7 @@ export default function MenuManagementPage() {
 
             {/* Add/Edit Dialog */}
             <Dialog open={dialogOpen} onOpenChange={(open) => !open && resetForm()}>
-                <DialogContent className="bg-white">
+                <DialogContent className="bg-white max-h-[80vh] overflow-y-auto">
                     <DialogHeader>
                         <DialogTitle>{editingItem ? 'Edit Menu Item' : 'Add Menu Item'}</DialogTitle>
                         <DialogDescription>
@@ -381,6 +478,115 @@ export default function MenuManagementPage() {
                                 className="h-4 w-4 rounded border-gray-300 text-primary focus:ring-primary"
                             />
                             <Label htmlFor="isChefSpecial">Chef's Special</Label>
+                        </div>
+
+                        <div className="space-y-4">
+                            <div className="flex items-center justify-between">
+                                <Label>Customization Options</Label>
+                                <Button type="button" variant="outline" size="sm" onClick={addCustomizationGroup}>
+                                    <Plus className="h-4 w-4 mr-2" />
+                                    Add Customization Group
+                                </Button>
+                            </div>
+
+                            {formData.customizationOptions?.map((group, groupIndex) => (
+                                <Card key={group.id || groupIndex} className="p-4 border border-gray-200">
+                                    <div className="space-y-4">
+                                        <div className="flex items-start justify-between gap-4">
+                                            <div className="flex-1 space-y-4">
+                                                <div className="grid grid-cols-2 gap-4">
+                                                    <div className="space-y-2">
+                                                        <Label>Group Name</Label>
+                                                        <Input
+                                                            value={group.name}
+                                                            onChange={(e) =>
+                                                                updateCustomizationGroup(group.id, 'name', e.target.value)
+                                                            }
+                                                            placeholder="e.g. Size, Toppings"
+                                                        />
+                                                    </div>
+                                                    <div className="space-y-2">
+                                                        <Label>Selection Type</Label>
+                                                        <select
+                                                            className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+                                                            value={group.type}
+                                                            onChange={(e) =>
+                                                                updateCustomizationGroup(group.id, 'type', e.target.value)
+                                                            }
+                                                        >
+                                                            <option value="single">Single Selection (Radio)</option>
+                                                            <option value="multiple">Multiple Selection (Checkbox)</option>
+                                                        </select>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                            <Button
+                                                type="button"
+                                                variant="ghost"
+                                                size="icon"
+                                                className="text-destructive"
+                                                onClick={() => removeCustomizationGroup(group.id)}
+                                            >
+                                                <Trash2 className="h-4 w-4" />
+                                            </Button>
+                                        </div>
+
+                                        <div className="space-y-2">
+                                            <Label className="text-xs text-muted-foreground">Options</Label>
+                                            {group.options.map((option, optIndex) => (
+                                                <div key={optIndex} className="flex items-center gap-2">
+                                                    <Input
+                                                        value={option.name}
+                                                        onChange={(e) =>
+                                                            updateOption(group.id, optIndex, 'name', e.target.value)
+                                                        }
+                                                        placeholder="Option Name"
+                                                        className="flex-1"
+                                                    />
+                                                    <div className="relative w-24">
+                                                        <span className="absolute left-2 top-2.5 text-muted-foreground">
+                                                            €
+                                                        </span>
+                                                        <Input
+                                                            type="number"
+                                                            value={option.price}
+                                                            onChange={(e) =>
+                                                                updateOption(
+                                                                    group.id,
+                                                                    optIndex,
+                                                                    'price',
+                                                                    parseFloat(e.target.value) || 0
+                                                                )
+                                                            }
+                                                            className="pl-6"
+                                                            placeholder="0.00"
+                                                        />
+                                                    </div>
+                                                    <Button
+                                                        type="button"
+                                                        variant="ghost"
+                                                        size="icon"
+                                                        className="h-10 w-10 text-muted-foreground hover:text-destructive"
+                                                        onClick={() => removeOptionFromGroup(group.id, optIndex)}
+                                                    >
+                                                        <X className="h-4 w-4" />
+                                                    </Button>
+                                                </div>
+                                            ))}
+                                            <Button
+                                                type="button"
+                                                variant="outline"
+                                                size="sm"
+                                                className="w-full mt-2 border-dashed"
+                                                onClick={() => addOptionToGroup(group.id)}
+                                            >
+                                                <Plus className="h-3 w-3 mr-2" />
+                                                Add Option
+                                            </Button>
+                                        </div>
+                                    </div>
+                                </Card>
+                            ))}
                         </div>
 
                         <DialogFooter>
