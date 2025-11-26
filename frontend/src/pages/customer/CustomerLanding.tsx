@@ -85,7 +85,7 @@ export default function CustomerLanding() {
 
                     // Item name and price
                     pdf.text(`${item.name}`, 25, yPosition);
-                    pdf.text(`$${item.price.toFixed(2)}`, 180, yPosition, { align: 'right' });
+                    pdf.text(`€${item.price.toFixed(2)}`, 180, yPosition, { align: 'right' });
                     yPosition += 5;
 
                     // Description

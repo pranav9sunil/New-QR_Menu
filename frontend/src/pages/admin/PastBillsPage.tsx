@@ -298,12 +298,12 @@ export default function PastBillsPage() {
                                         {order.items.map((item, i) => (
                                             <div key={i} className="flex justify-between text-sm mb-1">
                                                 <span>{item.quantity}x {item.name}</span>
-                                                <span>${(item.price * item.quantity).toFixed(2)}</span>
+                                                <span>€{(item.price * item.quantity).toFixed(2)}</span>
                                             </div>
                                         ))}
                                         <div className="flex justify-between text-sm font-medium mt-2 text-slate-600">
                                             <span>Subtotal</span>
-                                            <span>${order.total.toFixed(2)}</span>
+                                            <span>€{order.total.toFixed(2)}</span>
                                         </div>
                                     </div>
                                 ))}
@@ -315,7 +315,7 @@ export default function PastBillsPage() {
                         <div className="space-y-2 pt-4 border-t bg-gray-50 -mx-6 px-6 py-4 mt-auto">
                             <div className="flex justify-between text-xl font-bold text-primary">
                                 <span>Total Bill:</span>
-                                <span>${calculateTotal(selectedSession.orders).toFixed(2)}</span>
+                                <span>€{calculateTotal(selectedSession.orders).toFixed(2)}</span>
                             </div>
                         </div>
                     )}

@@ -212,7 +212,7 @@ export default function MenuManagementPage() {
                                                         {item.description}
                                                     </p>
                                                     <p className="text-lg font-bold text-primary">
-                                                        ${item.price.toFixed(2)}
+                                                        €{item.price.toFixed(2)}
                                                     </p>
                                                 </CardContent>
                                             </Card>
@@ -249,7 +249,7 @@ export default function MenuManagementPage() {
                                     </CardHeader>
                                     <CardContent>
                                         <p className="text-sm text-muted-foreground mb-3">{item.description}</p>
-                                        <p className="text-lg font-bold text-primary">${item.price.toFixed(2)}</p>
+                                        <p className="text-lg font-bold text-primary">€{item.price.toFixed(2)}</p>
                                     </CardContent>
                                 </Card>
                             ))}

@@ -405,8 +405,8 @@ export default function LiveBillsPage() {
                 for (const item of order.items) {
                     pdf.text(item.name, 20, yPos);
                     pdf.text(item.quantity.toString(), 120, yPos);
-                    pdf.text(`$${item.price.toFixed(2)}`, 150, yPos);
-                    pdf.text(`$${(item.price * item.quantity).toFixed(2)}`, 180, yPos);
+                    pdf.text(`€${item.price.toFixed(2)}`, 150, yPos);
+                    pdf.text(`€${(item.price * item.quantity).toFixed(2)}`, 180, yPos);
                     yPos += 7;
                 }
             }
@@ -424,9 +424,9 @@ export default function LiveBillsPage() {
                 : discount;
 
             pdf.text('Subtotal:', 140, yPos);
-            pdf.text(`$${subtotal.toFixed(2)}`, 180, yPos);
+            pdf.text(`€${subtotal.toFixed(2)}`, 180, yPos);
             yPos += 7;
-            pdf.text(`$${tax.toFixed(2)}`, 180, yPos);
+            pdf.text(`€${tax.toFixed(2)}`, 180, yPos);
             yPos += 7;
 
             if (selectedSession.discount && selectedSession.discount > 0) {
@@ -434,14 +434,14 @@ export default function LiveBillsPage() {
                     ? (subtotal + tax) * (selectedSession.discount / 100)
                     : selectedSession.discount;
                 pdf.text(`Discount:`, 120, yPos);
-                pdf.text(`-$${discountAmount.toFixed(2)}`, 180, yPos);
+                pdf.text(`-€${discountAmount.toFixed(2)}`, 180, yPos);
                 yPos += 7;
             }
 
             yPos += 5;
             pdf.setFontSize(14);
             pdf.text(`Total:`, 120, yPos);
-            pdf.text(`$${selectedSession.totalAmount.toFixed(2)}`, 180, yPos);
+            pdf.text(`€${selectedSession.totalAmount.toFixed(2)}`, 180, yPos);
 
             // Download PDF
             pdf.save(`bill-${selectedSession.tableName}-${Date.now()}.pdf`);
@@ -527,7 +527,7 @@ export default function LiveBillsPage() {
                                         </div>
                                         <div className="text-right">
                                             <p className="font-bold text-orange-600">
-                                                ${session.totalAmount.toFixed(2)}
+                                                €{session.totalAmount.toFixed(2)}
                                             </p>
                                         </div>
                                     </div>
@@ -600,7 +600,7 @@ export default function LiveBillsPage() {
                                                         <div className="flex-1">
                                                             <p className="font-medium">{item.name}</p>
                                                             <p className="text-sm text-muted-foreground">
-                                                                ${item.price.toFixed(2)} each
+                                                                €{item.price.toFixed(2)} each
                                                             </p>
                                                         </div>
                                                         <div className="flex items-center gap-3">
@@ -627,7 +627,7 @@ export default function LiveBillsPage() {
                                                                 </Button>
                                                             </div>
                                                             <p className="font-semibold text-orange-600 w-20 text-right">
-                                                                ${(item.price * item.quantity).toFixed(2)}
+                                                                €{(item.price * item.quantity).toFixed(2)}
                                                             </p>
                                                             <Button
                                                                 variant="ghost"
@@ -645,23 +645,23 @@ export default function LiveBillsPage() {
                                             <div className="border-t pt-3 space-y-1 text-sm">
                                                 <div className="flex justify-between">
                                                     <span className="text-muted-foreground">Subtotal:</span>
-                                                    <span>${order.subtotal.toFixed(2)}</span>
+                                                    <span>€{order.subtotal.toFixed(2)}</span>
                                                 </div>
                                                 <div className="flex justify-between text-sm">
                                                     <span>Tax (8%):</span>
-                                                    <span>${order.tax.toFixed(2)}</span>
+                                                    <span>€{order.tax.toFixed(2)}</span>
                                                 </div>
                                                 {order.discount && order.discount > 0 && (
                                                     <div className="flex justify-between text-sm text-green-600">
                                                         <span>Discount:</span>
-                                                        <span>-${(order.discountType === 'percentage'
+                                                        <span>-€{(order.discountType === 'percentage'
                                                             ? (order.subtotal + order.tax) * (order.discount / 100)
                                                             : order.discount).toFixed(2)}</span>
                                                     </div>
                                                 )}
                                                 <div className="flex justify-between font-bold text-lg pt-2 border-t">
                                                     <span>Total:</span>
-                                                    <span className="text-orange-600">${order.total.toFixed(2)}</span>
+                                                    <span className="text-orange-600">€{order.total.toFixed(2)}</span>
                                                 </div>
                                             </div>
                                         </div>
@@ -711,7 +711,7 @@ export default function LiveBillsPage() {
                                             <p className="font-medium">{item.name}</p>
                                             <p className="text-sm text-muted-foreground">{item.category}</p>
                                         </div>
-                                        <p className="font-semibold text-orange-600">${item.price.toFixed(2)}</p>
+                                        <p className="font-semibold text-orange-600">€{item.price.toFixed(2)}</p>
                                     </div>
                                 </div>
                             ))}
@@ -856,7 +856,7 @@ export default function LiveBillsPage() {
                                             >
                                                 <div className="flex justify-between items-center">
                                                     <p className="font-medium text-sm">{item.name}</p>
-                                                    <p className="text-sm text-orange-600">${item.price.toFixed(2)}</p>
+                                                    <p className="text-sm text-orange-600">€{item.price.toFixed(2)}</p>
                                                 </div>
                                             </div>
                                         ))}
@@ -876,7 +876,7 @@ export default function LiveBillsPage() {
                                                     <div className="flex-1">
                                                         <p className="font-medium text-sm">{item.name}</p>
                                                         <p className="text-xs text-muted-foreground">
-                                                            ${item.price.toFixed(2)} × {item.quantity}
+                                                            €{item.price.toFixed(2)} × {item.quantity}
                                                         </p>
                                                     </div>
                                                     <div className="flex items-center gap-2">
@@ -892,7 +892,7 @@ export default function LiveBillsPage() {
                                                             className="w-16 h-8"
                                                         />
                                                         <p className="font-semibold text-orange-600 w-16 text-right">
-                                                            ${(item.price * item.quantity).toFixed(2)}
+                                                            €{(item.price * item.quantity).toFixed(2)}
                                                         </p>
                                                         <Button
                                                             variant="ghost"
@@ -909,7 +909,7 @@ export default function LiveBillsPage() {
                                             ))}
                                             <div className="border-t pt-2 text-right">
                                                 <p className="font-bold text-lg text-orange-600">
-                                                    Total: ${(manualOrderItems.reduce((sum, item) => sum + (item.price * item.quantity), 0) * 1.08).toFixed(2)}
+                                                    Total: €{(manualOrderItems.reduce((sum, item) => sum + (item.price * item.quantity), 0) * 1.08).toFixed(2)}
                                                 </p>
                                             </div>
                                         </div>

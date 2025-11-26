@@ -314,7 +314,7 @@ export default function AccountsPage() {
                         <DollarSign className="h-4 w-4 text-muted-foreground" />
                     </CardHeader>
                     <CardContent>
-                        <div className="text-2xl font-bold">${stats.totalRevenue.toFixed(2)}</div>
+                        <div className="text-2xl font-bold">€{stats.totalRevenue.toFixed(2)}</div>
                         <p className="text-xs text-muted-foreground">
                             Collected in selected period
                         </p>
@@ -375,7 +375,7 @@ export default function AccountsPage() {
                                 <CartesianGrid strokeDasharray="3 3" />
                                 <XAxis dataKey="name" fontSize={12} />
                                 <YAxis />
-                                <Tooltip formatter={(value: number) => [`$${value.toFixed(2)}`, 'Sales']} />
+                                <Tooltip formatter={(value: number) => [`€${value.toFixed(2)}`, 'Sales']} />
                                 <Line type="monotone" dataKey="sales" stroke="#10b981" strokeWidth={2} name="Sales" />
                             </LineChart>
                         </ResponsiveContainer>
@@ -414,7 +414,7 @@ export default function AccountsPage() {
                                             <td className="py-3 font-medium">{item.name}</td>
                                             <td className="text-right py-3">{item.quantity}</td>
                                             <td className="text-right py-3 font-bold text-primary">
-                                                ${item.revenue.toFixed(2)}
+                                                €{item.revenue.toFixed(2)}
                                             </td>
                                         </tr>
                                     ))

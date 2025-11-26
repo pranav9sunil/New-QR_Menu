@@ -334,7 +334,7 @@ export default function MenuOrderPage() {
             order.items.forEach(item => {
                 doc.text(item.name, 20, yPos);
                 doc.text(`${item.quantity}x`, 130, yPos);
-                doc.text(`$${(item.price * item.quantity).toFixed(2)}`, 190, yPos, { align: 'right' });
+                doc.text(`€${(item.price * item.quantity).toFixed(2)}`, 190, yPos, { align: 'right' });
                 yPos += 7;
                 subtotal += item.price * item.quantity;
             });
@@ -347,12 +347,12 @@ export default function MenuOrderPage() {
         const tax = subtotal * taxRate;
         const total = subtotal + tax;
 
-        doc.text(`Subtotal: $${subtotal.toFixed(2)}`, 190, yPos, { align: 'right' });
+        doc.text(`Subtotal: €${subtotal.toFixed(2)}`, 190, yPos, { align: 'right' });
         yPos += 7;
-        doc.text(`Tax: $${tax.toFixed(2)}`, 190, yPos, { align: 'right' });
+        doc.text(`Tax: €${tax.toFixed(2)}`, 190, yPos, { align: 'right' });
         yPos += 10;
         doc.setFontSize(14);
-        doc.text(`Total: $${total.toFixed(2)}`, 190, yPos, { align: 'right' });
+        doc.text(`Total: €${total.toFixed(2)}`, 190, yPos, { align: 'right' });
 
         doc.save('receipt.pdf');
     };
@@ -606,7 +606,7 @@ export default function MenuOrderPage() {
                                                                     </div>
                                                                 </div>
                                                             </div>
-                                                            <div className="font-bold text-orange-600 text-base">${item.price.toFixed(2)}</div>
+                                                            <div className="font-bold text-orange-600 text-base">€{item.price.toFixed(2)}</div>
                                                             <p className="text-sm text-muted-foreground line-clamp-2 leading-snug">{item.description}</p>
 
                                                             {/* Dietary Badges */}
@@ -710,7 +710,7 @@ export default function MenuOrderPage() {
                                     <div className="flex-1">
                                         <div className="font-medium">{item.name}</div>
                                         <div className="text-sm text-muted-foreground">
-                                            ${item.price.toFixed(2)} each
+                                            €{item.price.toFixed(2)} each
                                         </div>
                                     </div>
                                     <div className="flex items-center gap-2">
@@ -750,15 +750,15 @@ export default function MenuOrderPage() {
                             <div className="space-y-2 pt-4 border-t">
                                 <div className="flex justify-between text-sm">
                                     <span>Subtotal:</span>
-                                    <span>${subtotal.toFixed(2)}</span>
+                                    <span>€{subtotal.toFixed(2)}</span>
                                 </div>
                                 <div className="flex justify-between text-sm">
                                     <span>Tax ({(taxRate * 100).toFixed(0)}%):</span>
-                                    <span>${tax.toFixed(2)}</span>
+                                    <span>€{tax.toFixed(2)}</span>
                                 </div>
                                 <div className="flex justify-between text-lg font-bold">
                                     <span>Total:</span>
-                                    <span>${total.toFixed(2)}</span>
+                                    <span>€{total.toFixed(2)}</span>
                                 </div>
                             </div>
 
@@ -788,7 +788,7 @@ export default function MenuOrderPage() {
                             <div className="flex justify-between font-medium">
                                 <span>Total Paid</span>
                                 <span>
-                                    ${(billOrders.reduce((sum, order) => sum + order.total, 0)).toFixed(2)}
+                                    €{(billOrders.reduce((sum, order) => sum + order.total, 0)).toFixed(2)}
                                 </span>
                             </div>
                             <p className="text-xs text-muted-foreground text-center pt-2">
@@ -821,7 +821,7 @@ export default function MenuOrderPage() {
                                         <div>
                                             <DialogTitle className="text-xl font-bold">{selectedItem.name}</DialogTitle>
                                             <DialogDescription className="mt-1 text-base text-gray-600">
-                                                ${selectedItem.price.toFixed(2)}
+                                                €{selectedItem.price.toFixed(2)}
                                             </DialogDescription>
                                         </div>
                                         {selectedItem.dietary?.includes('vegetarian') ? (
@@ -893,7 +893,7 @@ export default function MenuOrderPage() {
                                                             </div>
                                                         </div>
                                                         <span className="text-sm text-gray-600">
-                                                            {option.price > 0 ? `+ $${option.price.toFixed(2)}` : 'Free'}
+                                                            {option.price > 0 ? `+ €${option.price.toFixed(2)}` : 'Free'}
                                                         </span>
                                                     </div>
                                                 );
@@ -919,7 +919,7 @@ export default function MenuOrderPage() {
                                     className="w-full h-12 text-lg font-bold bg-green-600 hover:bg-green-700"
                                     onClick={handleConfirmCustomization}
                                 >
-                                    Add Item to Cart - $
+                                    Add Item to Cart - €
                                     {(selectedItem.price + Object.values(customizationSelections).flat().reduce((sum, opt) => sum + opt.price, 0)).toFixed(2)}
                                 </Button>
                             </div>
@@ -969,13 +969,13 @@ export default function MenuOrderPage() {
                                         {order.items.map((item, idx) => (
                                             <div key={idx} className="flex justify-between text-sm">
                                                 <span>{item.quantity}x {item.name}</span>
-                                                <span>${(item.price * item.quantity).toFixed(2)}</span>
+                                                <span>€{(item.price * item.quantity).toFixed(2)}</span>
                                             </div>
                                         ))}
                                     </div>
                                     <div className="pt-2 border-t flex justify-between font-bold">
                                         <span>Total</span>
-                                        <span>${order.total.toFixed(2)}</span>
+                                        <span>€{order.total.toFixed(2)}</span>
                                     </div>
                                 </div>
                             ))

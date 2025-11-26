@@ -708,7 +708,7 @@ export default function TableLayoutDesigner() {
                                         {order.items.map((item, i) => (
                                             <div key={i} className="flex justify-between text-sm mb-1">
                                                 <span>{item.quantity}x {item.name}</span>
-                                                <span>${(item.price * item.quantity).toFixed(2)}</span>
+                                                <span>€{(item.price * item.quantity).toFixed(2)}</span>
                                             </div>
                                         ))}
                                     </div>
@@ -721,15 +721,15 @@ export default function TableLayoutDesigner() {
                         <div className="space-y-2 pt-4 border-t bg-gray-50 -mx-6 px-6 py-4 mt-auto">
                             <div className="flex justify-between text-sm">
                                 <span>Subtotal:</span>
-                                <span>${sessionSubtotal.toFixed(2)}</span>
+                                <span>€{sessionSubtotal.toFixed(2)}</span>
                             </div>
                             <div className="flex justify-between text-sm">
-                                <span>Tax:</span>
-                                <span>${sessionTax.toFixed(2)}</span>
+                                <span>Tax (8%):</span>
+                                <span>€{sessionTax.toFixed(2)}</span>
                             </div>
-                            <div className="flex justify-between text-xl font-bold text-primary">
-                                <span>Total Due:</span>
-                                <span>${sessionTotal.toFixed(2)}</span>
+                            <div className="flex justify-between font-bold text-lg pt-2 border-t">
+                                <span>Total:</span>
+                                <span>€{sessionTotal.toFixed(2)}</span>
                             </div>
                         </div>
                     )}
