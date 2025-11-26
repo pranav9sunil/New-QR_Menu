@@ -78,16 +78,7 @@ export default function LoginPage() {
                         </Button>
                     </form>
 
-                    <div className="mt-6 pt-6 border-t">
-                        <div className="text-sm text-muted-foreground space-y-2">
-                            <p className="font-semibold">Temporary Credentials:</p>
-                            <div className="bg-muted p-3 rounded-md font-mono text-xs">
-                                <p><strong>Email:</strong> psunil@asu.edu</p>
-                                <p><strong>Password:</strong> user123</p>
-                                <p><strong>Username:</strong> user1</p>
-                            </div>
-                        </div>
-                    </div>
+
                 </CardContent>
             </Card>
         </div>
