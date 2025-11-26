@@ -429,10 +429,7 @@ export default function LiveBillsPage() {
             pdf.text(`€${tax.toFixed(2)}`, 180, yPos);
             yPos += 7;
 
-            if (selectedSession.discount && selectedSession.discount > 0) {
-                const discountAmount = selectedSession.discountType === 'percentage'
-                    ? (subtotal + tax) * (selectedSession.discount / 100)
-                    : selectedSession.discount;
+            if (discount > 0) {
                 pdf.text(`Discount:`, 120, yPos);
                 pdf.text(`-€${discountAmount.toFixed(2)}`, 180, yPos);
                 yPos += 7;

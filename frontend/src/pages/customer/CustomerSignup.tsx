@@ -66,7 +66,7 @@ export default function CustomerSignup() {
                 tName = data?.name || '';
                 rId = data?.restaurantId || '';
                 setTableName(tName);
-            } else if (tName) {
+            } else if (tName && tName !== null) {
                 // Fetch by Name (Legacy support)
                 const tablesRef = collection(db, 'tables');
                 const qTable = query(tablesRef, where('name', '==', tName), limit(1));
