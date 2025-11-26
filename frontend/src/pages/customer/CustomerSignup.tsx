@@ -65,7 +65,7 @@ export default function CustomerSignup() {
                 const data = tableDoc.data();
                 tName = data?.name || '';
                 rId = data?.restaurantId || '';
-                setTableName(tName);
+                setTableName(tName || '');
             } else if (tName && tName !== null) {
                 // Fetch by Name (Legacy support)
                 const tablesRef = collection(db, 'tables');
