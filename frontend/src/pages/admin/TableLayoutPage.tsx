@@ -137,9 +137,13 @@ export default function TableLayoutDesigner() {
 
             // Sort by creation time if available
             loadedLayouts.sort((a, b) => {
-                const dateA = a.createdAt ? new Date(a.createdAt['seconds'] * 1000) : new Date(0);
-                const dateB = b.createdAt ? new Date(b.createdAt['seconds'] * 1000) : new Date(0);
-                return dateA.getTime() - dateB.getTime();
+                const getMillis = (date: any) => {
+                    if (!date) return 0;
+                    if (date.seconds) return date.seconds * 1000;
+                    if (date instanceof Date) return date.getTime();
+                    return 0;
+                };
+                return getMillis(a.createdAt) - getMillis(b.createdAt);
             });
 
             if (loadedLayouts.length === 0) {

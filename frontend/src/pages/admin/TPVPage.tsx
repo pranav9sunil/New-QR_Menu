@@ -1,3 +1,4 @@
+
 import { useState, useEffect } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { db } from '@/config/firebase';
@@ -14,7 +15,7 @@ import {
 import type { MenuItem, CartItem, CustomizationOption, Table } from '@/types';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { ScrollArea } from '@/components/ui/scroll-area';
+
 import {
     Search,
     Plus,
@@ -27,8 +28,7 @@ import {
     Sandwich,
     Pizza,
     ChefHat,
-    ShoppingCart,
-    X,
+
     Check
 } from 'lucide-react';
 import {
@@ -79,7 +79,7 @@ export default function TPVPage() {
     const [currentNote, setCurrentNote] = useState('');
 
     // Mobile Cart Sheet
-    const [mobileCartOpen, setMobileCartOpen] = useState(false);
+
 
     useEffect(() => {
         if (!restaurantId) return;
@@ -279,7 +279,7 @@ export default function TPVPage() {
             alert('Order placed successfully!');
             setCart([]);
             setSelectedTableId(null);
-            setMobileCartOpen(false);
+
         } catch (error) {
             console.error('Error placing order:', error);
             alert('Failed to place order');
@@ -476,7 +476,7 @@ export default function TPVPage() {
                                     )}
                                 </Label>
                                 <span className="text-xs text-muted-foreground">
-                                    {group.type === 'single' ? 'Select 1' : `Select up to ${group.maxSelection || 'any'}`}
+                                    {group.type === 'single' ? 'Select 1' : `Select up to ${group.maxSelection || 'any'} `}
                                 </span>
                             </div>
 

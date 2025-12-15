@@ -16,7 +16,7 @@ import {
     Printer,
     Monitor,
 } from 'lucide-react';
-import { cn } from '@/lib/utils';
+
 import SettingsModal from './SettingsModal';
 import { Sheet, SheetContent, SheetTrigger, SheetHeader, SheetTitle } from '@/components/ui/sheet';
 
