@@ -382,7 +382,7 @@ export default function TPVPage() {
     );
 
     return (
-        <div className="flex flex-col lg:flex-row h-[calc(100vh-4rem)] gap-4 relative overflow-hidden">
+        <div className="flex flex-col lg:flex-row h-full gap-4 relative overflow-hidden">
             {/* Left Side: Menu */}
             <div className="flex-1 flex flex-col gap-4 min-h-0 overflow-hidden">
                 {/* Header / Search */}
