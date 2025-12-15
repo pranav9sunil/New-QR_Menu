@@ -13,8 +13,9 @@ import {
     setDoc,
     deleteField,
     onSnapshot,
+    serverTimestamp,
 } from 'firebase/firestore';
-import type { Table, TableSession, Order } from '@/types';
+import type { Table, TableSession, Order, Layout as TableLayout } from '@/types';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -40,6 +41,7 @@ import {
     CheckCircle,
     Info,
     CalendarClock,
+    ChevronDown,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
@@ -79,28 +81,106 @@ export default function TableLayoutDesigner() {
     const [showReservationDialog, setShowReservationDialog] = useState(false);
     const [selectedReservedTable, setSelectedReservedTable] = useState<Table | null>(null);
 
+    // Layout State
+    const [layouts, setLayouts] = useState<TableLayout[]>([]);
+    const [currentLayoutId, setCurrentLayoutId] = useState<string | null>(null);
+    const [showNewLayoutDialog, setShowNewLayoutDialog] = useState(false);
+    const [newLayoutName, setNewLayoutName] = useState('');
+    const [isLayoutDropdownOpen, setIsLayoutDropdownOpen] = useState(false);
+    const [editingLayout, setEditingLayout] = useState<TableLayout | null>(null);
+    const [showEditLayoutDialog, setShowEditLayoutDialog] = useState(false);
+
     useEffect(() => {
+        console.log('🔍 TableLayoutPage - restaurantId:', restaurantId);
+
         if (!restaurantId) {
+            console.log('⚠️ No restaurantId - waiting...');
             const timer = setTimeout(() => setLoading(false), 2000);
             return () => clearTimeout(timer);
         }
+
+        console.log('📡 Setting up real-time listener for tables with restaurantId:', restaurantId);
 
         // Real-time listener for tables
         const tablesRef = collection(db, 'tables');
         const q = query(tablesRef, where('restaurantId', '==', restaurantId));
 
         const unsubscribe = onSnapshot(q, (snapshot) => {
+            console.log('📊 Tables snapshot received. Size:', snapshot.size);
             const loadedTables: Table[] = [];
             snapshot.forEach((doc) => {
+                console.log('  - Table:', doc.id, doc.data());
                 loadedTables.push({ id: doc.id, ...doc.data() } as Table);
             });
+            console.log('✅ Loaded tables:', loadedTables.length);
             setTables(loadedTables);
             setLoading(false);
         }, (error) => {
-            console.error('Error loading tables:', error);
+            console.error('❌ Error loading tables:', error);
             setLoading(false);
         });
 
+        return () => unsubscribe();
+    }, [restaurantId]);
+
+    // Load Layouts
+    useEffect(() => {
+        if (!restaurantId) return;
+        const layoutsRef = collection(db, 'layouts');
+        const q = query(layoutsRef, where('restaurantId', '==', restaurantId));
+
+        const unsubscribe = onSnapshot(q, async (snapshot) => {
+            const loadedLayouts: TableLayout[] = [];
+            snapshot.forEach((doc) => {
+                loadedLayouts.push({ id: doc.id, ...doc.data() } as TableLayout);
+            });
+
+            // Sort by creation time if available
+            loadedLayouts.sort((a, b) => {
+                const dateA = a.createdAt ? new Date(a.createdAt['seconds'] * 1000) : new Date(0);
+                const dateB = b.createdAt ? new Date(b.createdAt['seconds'] * 1000) : new Date(0);
+                return dateA.getTime() - dateB.getTime();
+            });
+
+            if (loadedLayouts.length === 0) {
+                // Try to create default layout, but if it fails (permissions), use a virtual one
+                try {
+                    await addDoc(collection(db, 'layouts'), {
+                        restaurantId,
+                        name: 'Main Hall',
+                        createdAt: serverTimestamp()
+                    });
+                } catch (e) {
+                    console.error("Error creating default layout (likely permissions):", e);
+                    // Fallback: Use virtual layout so tables are visible
+                    const virtualLayout: TableLayout = {
+                        id: 'default',
+                        restaurantId,
+                        name: 'Main Hall',
+                        createdAt: new Date()
+                    };
+                    setLayouts([virtualLayout]);
+                    setCurrentLayoutId('default');
+                }
+            } else {
+                setLayouts(loadedLayouts);
+                setCurrentLayoutId(prev => {
+                    if (prev && loadedLayouts.find(l => l.id === prev)) return prev;
+                    return loadedLayouts[0].id;
+                });
+            }
+        }, (error) => {
+            console.error("Error loading layouts:", error);
+            // Fallback on error
+            const virtualLayout: TableLayout = {
+                id: 'default',
+                restaurantId,
+                name: 'Main Hall',
+                createdAt: new Date()
+            };
+            setLayouts([virtualLayout]);
+            setCurrentLayoutId('default');
+        });
         return () => unsubscribe();
     }, [restaurantId]);
 
@@ -140,6 +220,7 @@ export default function TableLayoutDesigner() {
             position: { x: 50, y: 50 },
             isActive: true,
             createdAt: new Date(),
+            layoutId: currentLayoutId || undefined
         };
 
         try {
@@ -361,6 +442,7 @@ export default function TableLayoutDesigner() {
                 updateDoc(firestoreDoc(db, 'tables', table.id), {
                     position: table.position,
                     seats: table.seats,
+                    layoutId: table.layoutId || currentLayoutId // Ensure layoutId is saved
                 })
             );
 
@@ -382,10 +464,70 @@ export default function TableLayoutDesigner() {
         }
     };
 
+    const handleCreateLayout = async () => {
+        if (!newLayoutName.trim() || !restaurantId) return;
+
+        try {
+            const docRef = await addDoc(collection(db, 'layouts'), {
+                restaurantId,
+                name: newLayoutName.trim(),
+                createdAt: serverTimestamp()
+            });
+
+            setNewLayoutName('');
+            setShowNewLayoutDialog(false);
+            setCurrentLayoutId(docRef.id);
+        } catch (error: any) {
+            console.error('Error creating layout:', error);
+            if (error.code === 'permission-denied') {
+                alert('Permission denied: You need to update your Firestore Security Rules to allow creating layouts. See FIRESTORE_RULES_UPDATE_LAYOUTS.md');
+            } else {
+                alert('Failed to create layout');
+            }
+        }
+    };
+
+    const handleUpdateLayout = async () => {
+        if (!editingLayout || !editingLayout.name.trim()) return;
+
+        try {
+            await updateDoc(firestoreDoc(db, 'layouts', editingLayout.id), {
+                name: editingLayout.name.trim()
+            });
+
+            // Optimistic update
+            setLayouts(layouts.map(l => l.id === editingLayout.id ? { ...l, name: editingLayout.name.trim() } : l));
+
+            setShowEditLayoutDialog(false);
+            setEditingLayout(null);
+        } catch (error) {
+            console.error('Error updating layout:', error);
+            alert('Failed to update layout');
+        }
+    };
+
+
+
+    // Filter tables for current layout
+    const filteredTables = tables.filter(t => {
+        if (!currentLayoutId) return false;
+
+        // If exact match
+        if (t.layoutId === currentLayoutId) return true;
+
+        // Backward compatibility & Virtual Default Layout:
+        // Show tables without layoutId if we are on the first layout (or default virtual one)
+        const isFirstOrDefault = layouts.length > 0 && (currentLayoutId === layouts[0].id || currentLayoutId === 'default');
+        if (!t.layoutId && isFirstOrDefault) return true;
+
+        return false;
+    });
+
     // Calculate totals for selected session
     const sessionSubtotal = selectedTableSession?.orders.reduce((sum, order) => sum + order.subtotal, 0) || 0;
     const sessionTax = selectedTableSession?.orders.reduce((sum, order) => sum + order.tax, 0) || 0;
-    const sessionTotal = selectedTableSession?.orders.reduce((sum, order) => sum + order.total, 0) || 0;
+    const sessionTip = selectedTableSession?.session.tipAmount || 0;
+    const sessionTotal = (selectedTableSession?.orders.reduce((sum, order) => sum + order.total, 0) || 0) + sessionTip;
 
     if (loading) {
         return (
@@ -398,7 +540,68 @@ export default function TableLayoutDesigner() {
     return (
         <div className="space-y-4">
             <div className="flex items-center justify-between">
-                <h1 className="text-3xl font-bold">Table Layout</h1>
+                <div className="flex items-center gap-4">
+                    <h1 className="text-3xl font-bold">Table Layout</h1>
+
+                    {/* Layout Selector */}
+                    <div className="relative">
+                        <Button
+                            variant="outline"
+                            className="w-48 justify-between"
+                            onClick={() => setIsLayoutDropdownOpen(!isLayoutDropdownOpen)}
+                        >
+                            {layouts.find(l => l.id === currentLayoutId)?.name || 'Loading...'}
+                            <ChevronDown className="h-4 w-4 opacity-50" />
+                        </Button>
+
+                        {isLayoutDropdownOpen && (
+                            <div className="absolute top-full left-0 mt-1 w-48 bg-white rounded-md border shadow-lg z-50 py-1">
+                                {layouts.map(layout => (
+                                    <div
+                                        key={layout.id}
+                                        className={cn(
+                                            "w-full flex items-center justify-between px-3 py-2 text-sm hover:bg-gray-100 transition-colors group",
+                                            currentLayoutId === layout.id && "bg-gray-50 font-medium text-primary"
+                                        )}
+                                    >
+                                        <button
+                                            className="flex-1 text-left"
+                                            onClick={() => {
+                                                setCurrentLayoutId(layout.id);
+                                                setIsLayoutDropdownOpen(false);
+                                            }}
+                                        >
+                                            {layout.name}
+                                        </button>
+                                        <button
+                                            className="opacity-0 group-hover:opacity-100 p-1 hover:bg-gray-200 rounded transition-opacity"
+                                            onClick={(e) => {
+                                                e.stopPropagation();
+                                                setEditingLayout(layout);
+                                                setShowEditLayoutDialog(true);
+                                                setIsLayoutDropdownOpen(false);
+                                            }}
+                                            title="Rename Layout"
+                                        >
+                                            <Edit2 className="h-3 w-3 text-gray-500" />
+                                        </button>
+                                    </div>
+                                ))}
+                                <div className="border-t my-1" />
+                                <button
+                                    className="w-full text-left px-3 py-2 text-sm hover:bg-gray-100 text-primary flex items-center"
+                                    onClick={() => {
+                                        setIsLayoutDropdownOpen(false);
+                                        setShowNewLayoutDialog(true);
+                                    }}
+                                >
+                                    <Plus className="h-3 w-3 mr-2" />
+                                    Add New Layout
+                                </button>
+                            </div>
+                        )}
+                    </div>
+                </div>
                 <div className="flex items-center gap-2">
                     <Button
                         variant="outline"
@@ -458,15 +661,15 @@ export default function TableLayoutDesigner() {
                         height: `${100 / zoom}%`,
                     }}
                 >
-                    {tables.length === 0 ? (
+                    {filteredTables.length === 0 ? (
                         <div className="absolute inset-0 flex items-center justify-center text-muted-foreground pointer-events-none">
                             <div className="text-center">
-                                <p className="text-lg font-medium">No tables configured</p>
+                                <p className="text-lg font-medium">No tables in this layout</p>
                                 <p className="text-sm">Click "Edit Layout" then "Add Table" to get started</p>
                             </div>
                         </div>
                     ) : (
-                        tables.map((table) => {
+                        filteredTables.map((table) => {
                             const session = activeSessions[table.id];
                             const isPaymentPending = session?.status === 'payment_pending';
                             const isReserved = !!table.reservation;
@@ -727,6 +930,12 @@ export default function TableLayoutDesigner() {
                                 <span>Tax (8%):</span>
                                 <span>€{sessionTax.toFixed(2)}</span>
                             </div>
+                            {sessionTip > 0 && (
+                                <div className="flex justify-between text-sm text-green-600 font-medium">
+                                    <span>Server Tip:</span>
+                                    <span>€{sessionTip.toFixed(2)}</span>
+                                </div>
+                            )}
                             <div className="flex justify-between font-bold text-lg pt-2 border-t">
                                 <span>Total:</span>
                                 <span>€{sessionTotal.toFixed(2)}</span>
@@ -873,6 +1082,60 @@ export default function TableLayoutDesigner() {
                         >
                             Cancel Reservation
                         </Button>
+                    </DialogFooter>
+                </DialogContent>
+            </Dialog>
+
+            {/* New Layout Dialog */}
+            <Dialog open={showNewLayoutDialog} onOpenChange={setShowNewLayoutDialog}>
+                <DialogContent className="bg-white">
+                    <DialogHeader>
+                        <DialogTitle>Create New Layout</DialogTitle>
+                        <DialogDescription>Enter a name for the new layout (e.g., "Patio", "Bar")</DialogDescription>
+                    </DialogHeader>
+                    <div className="space-y-4">
+                        <div className="space-y-2">
+                            <Label htmlFor="layoutName">Layout Name</Label>
+                            <Input
+                                id="layoutName"
+                                value={newLayoutName}
+                                onChange={(e) => setNewLayoutName(e.target.value)}
+                                placeholder="Main Hall"
+                            />
+                        </div>
+                    </div>
+                    <DialogFooter>
+                        <Button variant="outline" onClick={() => setShowNewLayoutDialog(false)}>
+                            Cancel
+                        </Button>
+                        <Button onClick={handleCreateLayout}>Create Layout</Button>
+                    </DialogFooter>
+                </DialogContent>
+            </Dialog>
+
+            {/* Edit Layout Dialog */}
+            <Dialog open={showEditLayoutDialog} onOpenChange={setShowEditLayoutDialog}>
+                <DialogContent className="bg-white">
+                    <DialogHeader>
+                        <DialogTitle>Edit Layout Name</DialogTitle>
+                        <DialogDescription>Update the name of this layout</DialogDescription>
+                    </DialogHeader>
+                    <div className="space-y-4">
+                        <div className="space-y-2">
+                            <Label htmlFor="editLayoutName">Layout Name</Label>
+                            <Input
+                                id="editLayoutName"
+                                value={editingLayout?.name || ''}
+                                onChange={(e) => setEditingLayout(prev => prev ? { ...prev, name: e.target.value } : null)}
+                                placeholder="Layout Name"
+                            />
+                        </div>
+                    </div>
+                    <DialogFooter>
+                        <Button variant="outline" onClick={() => setShowEditLayoutDialog(false)}>
+                            Cancel
+                        </Button>
+                        <Button onClick={handleUpdateLayout}>Update Layout</Button>
                     </DialogFooter>
                 </DialogContent>
             </Dialog>

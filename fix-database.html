@@ -1,0 +1,254 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <title>Fix Firestore Tables</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 1200px;
+            margin: 20px auto;
+            padding: 20px;
+        }
+
+        button {
+            background: #4CAF50;
+            color: white;
+            padding: 10px 20px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            margin: 5px;
+        }
+
+        button:hover {
+            background: #45a049;
+        }
+
+        .output {
+            background: #f5f5f5;
+            padding: 15px;
+            border-radius: 4px;
+            margin-top: 20px;
+            white-space: pre-wrap;
+        }
+
+        .error {
+            color: red;
+        }
+
+        .success {
+            color: green;
+        }
+    </style>
+    <script type="module">
+        import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js';
+        import { getFirestore, collection, getDocs, addDoc, query, where, doc, updateDoc } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js';
+        import { getAuth, signInWithEmailAndPassword } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js';
+
+        const firebaseConfig = {
+            apiKey: "AIzaSyAT2acMkrTKsMMaW2aR5aGLTMdYQbje7i8",
+            authDomain: "qr-ordering-system-c80d4.firebaseapp.com",
+            projectId: "qr-ordering-system-c80d4",
+            storageBucket: "qr-ordering-system-c80d4.firebasestorage.app",
+            messagingSenderId: "380518528753",
+            appId: "1:380518528753:web:4893e0ed933138b5f99b50"
+        };
+
+        const app = initializeApp(firebaseConfig);
+        const db = getFirestore(app);
+        const auth = getAuth(app);
+
+        let restaurantId = null;
+
+        function log(message, type = 'info') {
+            const output = document.getElementById('output');
+            const className = type === 'error' ? 'error' : type === 'success' ? 'success' : '';
+            output.innerHTML += `<div class="${className}">${message}</div>`;
+        }
+
+        async function checkData() {
+            const output = document.getElementById('output');
+            output.innerHTML = '';
+            log('Checking Firestore data...\n');
+
+            try {
+                // Check restaurants
+                const restaurantsSnap = await getDocs(collection(db, 'restaurants'));
+                log(`\n=== RESTAURANTS (${restaurantsSnap.size}) ===`);
+                restaurantsSnap.forEach(doc => {
+                    restaurantId = doc.id; // Save the first restaurant ID
+                    log(`ID: ${doc.id}`);
+                    log(`Name: ${doc.data().name}`);
+                    log(`---`);
+                });
+
+                // Check users
+                const usersSnap = await getDocs(collection(db, 'users'));
+                log(`\n=== USERS (${usersSnap.size}) ===`);
+                usersSnap.forEach(doc => {
+                    const data = doc.data();
+                    log(`Email: ${data.email}`);
+                    log(`Restaurant ID: ${data.restaurantId}`);
+                    log(`---`);
+                });
+
+                // Check tables
+                const tablesSnap = await getDocs(collection(db, 'tables'));
+                log(`\n=== TABLES (${tablesSnap.size}) ===`);
+                if (tablesSnap.size === 0) {
+                    log('⚠️ NO TABLES FOUND!', 'error');
+                } else {
+                    tablesSnap.forEach(doc => {
+                        const data = doc.data();
+                        log(`ID: ${doc.id}`);
+                        log(`Name: ${data.name}`);
+                        log(`Restaurant ID: ${data.restaurantId}`);
+                        log(`Position: x=${data.position?.x}, y=${data.position?.y}`);
+                        log(`---`);
+                    });
+                }
+
+                if (restaurantId) {
+                    log(`\n✓ Restaurant ID found: ${restaurantId}`, 'success');
+                }
+
+            } catch (error) {
+                log(`Error: ${error.message}`, 'error');
+            }
+        }
+
+        async function createSampleTables() {
+            const output = document.getElementById('output');
+            output.innerHTML = '';
+
+            if (!restaurantId) {
+                log('Getting restaurant ID...', 'info');
+                const restaurantsSnap = await getDocs(collection(db, 'restaurants'));
+                if (restaurantsSnap.empty) {
+                    log('ERROR: No restaurant found! Please create a restaurant first.', 'error');
+                    return;
+                }
+                restaurantId = restaurantsSnap.docs[0].id;
+                log(`Using restaurant ID: ${restaurantId}`, 'success');
+            }
+
+            log('Creating sample tables...\n');
+
+            const sampleTables = [
+                { name: 'Table 1', seats: 4, position: { x: 100, y: 100 } },
+                { name: 'Table 2', seats: 4, position: { x: 300, y: 100 } },
+                { name: 'Table 3', seats: 2, position: { x: 100, y: 300 } },
+                { name: 'Table 4', seats: 6, position: { x: 300, y: 300 } },
+                { name: 'Table 5', seats: 4, position: { x: 500, y: 100 } },
+            ];
+
+            try {
+                for (const table of sampleTables) {
+                    const tableData = {
+                        restaurantId: restaurantId,
+                        name: table.name,
+                        seats: table.seats,
+                        position: table.position,
+                        isActive: true,
+                        createdAt: new Date()
+                    };
+
+                    const docRef = await addDoc(collection(db, 'tables'), tableData);
+                    log(`✓ Created ${table.name} (ID: ${docRef.id})`, 'success');
+                }
+
+                log('\n✓ All tables created successfully!', 'success');
+                log('\nRefresh your admin page to see the tables.');
+
+            } catch (error) {
+                log(`Error creating tables: ${error.message}`, 'error');
+            }
+        }
+
+        async function fixTableRestaurantIds() {
+            const output = document.getElementById('output');
+            output.innerHTML = '';
+
+            log('Fixing table restaurant IDs...\n');
+
+            try {
+                // Get the restaurant ID
+                const restaurantsSnap = await getDocs(collection(db, 'restaurants'));
+                if (restaurantsSnap.empty) {
+                    log('ERROR: No restaurant found!', 'error');
+                    return;
+                }
+                const correctRestaurantId = restaurantsSnap.docs[0].id;
+                log(`Correct restaurant ID: ${correctRestaurantId}\n`);
+
+                // Get all tables
+                const tablesSnap = await getDocs(collection(db, 'tables'));
+
+                if (tablesSnap.empty) {
+                    log('No tables found to fix.', 'error');
+                    return;
+                }
+
+                let fixedCount = 0;
+                for (const tableDoc of tablesSnap.docs) {
+                    const tableData = tableDoc.data();
+                    if (tableData.restaurantId !== correctRestaurantId) {
+                        await updateDoc(doc(db, 'tables', tableDoc.id), {
+                            restaurantId: correctRestaurantId
+                        });
+                        log(`✓ Fixed ${tableData.name} (was: ${tableData.restaurantId})`, 'success');
+                        fixedCount++;
+                    } else {
+                        log(`✓ ${tableData.name} already correct`);
+                    }
+                }
+
+                if (fixedCount > 0) {
+                    log(`\n✓ Fixed ${fixedCount} table(s)!`, 'success');
+                } else {
+                    log('\n✓ All tables already have correct restaurant ID', 'success');
+                }
+                log('\nRefresh your admin page to see the tables.');
+
+            } catch (error) {
+                log(`Error: ${error.message}`, 'error');
+            }
+        }
+
+        window.checkData = checkData;
+        window.createSampleTables = createSampleTables;
+        window.fixTableRestaurantIds = fixTableRestaurantIds;
+
+        // Auto-check on load
+        window.addEventListener('load', checkData);
+    </script>
+</head>
+
+<body>
+    <h1>🔧 Firestore Database Fixer</h1>
+
+    <div>
+        <h2>Actions:</h2>
+        <button onclick="checkData()">1. Check Database</button>
+        <button onclick="fixTableRestaurantIds()">2. Fix Table Restaurant IDs</button>
+        <button onclick="createSampleTables()">3. Create Sample Tables</button>
+    </div>
+
+    <div id="output" class="output">
+        Loading...
+    </div>
+
+    <div style="margin-top: 20px; padding: 15px; background: #e3f2fd; border-radius: 4px;">
+        <h3>Instructions:</h3>
+        <ol>
+            <li><strong>Check Database</strong> - See what's currently in Firestore</li>
+            <li><strong>Fix Table Restaurant IDs</strong> - If tables exist but have wrong restaurant ID</li>
+            <li><strong>Create Sample Tables</strong> - If no tables exist, create 5 sample tables</li>
+        </ol>
+        <p><strong>After running any fix, refresh your admin page at:</strong>
+            <code>http://localhost:5173/admin/layout</code></p>
+    </div>
+</body>
+
+</html>

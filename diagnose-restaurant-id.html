@@ -1,0 +1,222 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <title>Diagnose Restaurant ID Mismatch</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 1200px;
+            margin: 20px auto;
+            padding: 20px;
+        }
+
+        .section {
+            background: #f5f5f5;
+            padding: 15px;
+            border-radius: 4px;
+            margin: 10px 0;
+        }
+
+        .error {
+            color: red;
+            font-weight: bold;
+        }
+
+        .success {
+            color: green;
+            font-weight: bold;
+        }
+
+        .warning {
+            color: orange;
+            font-weight: bold;
+        }
+
+        button {
+            background: #4CAF50;
+            color: white;
+            padding: 10px 20px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            margin: 5px;
+        }
+
+        button:hover {
+            background: #45a049;
+        }
+
+        button.danger {
+            background: #f44336;
+        }
+
+        button.danger:hover {
+            background: #da190b;
+        }
+
+        pre {
+            background: #fff;
+            padding: 10px;
+            border: 1px solid #ddd;
+            overflow-x: auto;
+        }
+    </style>
+    <script type="module">
+        import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js';
+        import { getFirestore, collection, getDocs, doc, updateDoc } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js';
+
+        const firebaseConfig = {
+            apiKey: "AIzaSyAT2acMkrTKsMMaW2aR5aGLTMdYQbje7i8",
+            authDomain: "qr-ordering-system-c80d4.firebaseapp.com",
+            projectId: "qr-ordering-system-c80d4",
+            storageBucket: "qr-ordering-system-c80d4.firebasestorage.app",
+            messagingSenderId: "380518528753",
+            appId: "1:380518528753:web:4893e0ed933138b5f99b50"
+        };
+
+        const app = initializeApp(firebaseConfig);
+        const db = getFirestore(app);
+
+        async function diagnose() {
+            const output = document.getElementById('output');
+            output.innerHTML = '<p>Diagnosing...</p>';
+
+            try {
+                // Get restaurants
+                const restaurantsSnap = await getDocs(collection(db, 'restaurants'));
+                let restaurantInfo = '<div class="section"><h3>📍 Restaurants</h3>';
+                let restaurantIds = [];
+
+                restaurantsSnap.forEach(doc => {
+                    restaurantIds.push(doc.id);
+                    restaurantInfo += `<p><strong>ID:</strong> ${doc.id}<br><strong>Name:</strong> ${doc.data().name}</p>`;
+                });
+                restaurantInfo += '</div>';
+
+                // Get users
+                const usersSnap = await getDocs(collection(db, 'users'));
+                let userInfo = '<div class="section"><h3>👤 Users</h3>';
+                let userRestaurantIds = [];
+
+                usersSnap.forEach(doc => {
+                    const data = doc.data();
+                    userRestaurantIds.push(data.restaurantId);
+                    userInfo += `<p><strong>Email:</strong> ${data.email}<br><strong>Restaurant ID:</strong> ${data.restaurantId}</p>`;
+                });
+                userInfo += '</div>';
+
+                // Get tables
+                const tablesSnap = await getDocs(collection(db, 'tables'));
+                let tableInfo = '<div class="section"><h3>🪑 Tables</h3>';
+                let tableRestaurantIds = new Set();
+
+                tablesSnap.forEach(doc => {
+                    const data = doc.data();
+                    tableRestaurantIds.add(data.restaurantId);
+                });
+
+                tableInfo += `<p><strong>Total Tables:</strong> ${tablesSnap.size}</p>`;
+                tableInfo += `<p><strong>Restaurant IDs in tables:</strong> ${Array.from(tableRestaurantIds).join(', ')}</p>`;
+                tableInfo += '</div>';
+
+                // Analysis
+                let analysis = '<div class="section"><h3>🔍 Analysis</h3>';
+
+                const userRestId = userRestaurantIds[0];
+                const tableRestId = Array.from(tableRestaurantIds)[0];
+                const actualRestId = restaurantIds[0];
+
+                if (userRestId === tableRestId) {
+                    analysis += '<p class="success">✓ User and Tables have matching restaurant IDs</p>';
+                } else {
+                    analysis += '<p class="error">✗ MISMATCH FOUND!</p>';
+                    analysis += `<p>User restaurant ID: <code>${userRestId}</code></p>`;
+                    analysis += `<p>Tables restaurant ID: <code>${tableRestId}</code></p>`;
+                    analysis += `<p>Actual restaurant ID: <code>${actualRestId}</code></p>`;
+
+                    // Store for fix function
+                    window.correctRestaurantId = actualRestId;
+                    window.userRestaurantId = userRestId;
+                    window.tableRestaurantId = tableRestId;
+                }
+
+                analysis += '</div>';
+
+                output.innerHTML = restaurantInfo + userInfo + tableInfo + analysis;
+
+            } catch (error) {
+                output.innerHTML = `<p class="error">Error: ${error.message}</p>`;
+            }
+        }
+
+        async function fixUserRestaurantId() {
+            if (!confirm('This will update the user restaurant ID to match the actual restaurant. Continue?')) {
+                return;
+            }
+
+            const output = document.getElementById('fixOutput');
+            output.innerHTML = '<p>Fixing user restaurant ID...</p>';
+
+            try {
+                const usersSnap = await getDocs(collection(db, 'users'));
+                const correctId = window.correctRestaurantId || 'rest_001';
+
+                for (const userDoc of usersSnap.docs) {
+                    await updateDoc(doc(db, 'users', userDoc.id), {
+                        restaurantId: correctId
+                    });
+                    output.innerHTML += `<p class="success">✓ Updated user ${userDoc.data().email} to restaurant ID: ${correctId}</p>`;
+                }
+
+                output.innerHTML += '<p class="success"><strong>✓ Done! Please refresh your admin page.</strong></p>';
+
+            } catch (error) {
+                output.innerHTML = `<p class="error">Error: ${error.message}</p>`;
+            }
+        }
+
+        window.diagnose = diagnose;
+        window.fixUserRestaurantId = fixUserRestaurantId;
+        window.addEventListener('load', diagnose);
+    </script>
+</head>
+
+<body>
+    <h1>🔍 Restaurant ID Diagnostic Tool</h1>
+
+    <div id="output" class="section">
+        Loading...
+    </div>
+
+    <div class="section">
+        <h3>🔧 Fix Options</h3>
+        <button onclick="diagnose()">Re-run Diagnosis</button>
+        <button class="danger" onclick="fixUserRestaurantId()">Fix User Restaurant ID</button>
+    </div>
+
+    <div id="fixOutput" class="section" style="display: none;">
+    </div>
+
+    <div class="section" style="background: #fff3cd; border: 1px solid #ffc107;">
+        <h3>⚠️ Important</h3>
+        <p>This tool will identify if there's a mismatch between:</p>
+        <ul>
+            <li>The actual restaurant ID in the restaurants collection</li>
+            <li>The restaurant ID assigned to the user</li>
+            <li>The restaurant ID assigned to the tables</li>
+        </ul>
+        <p><strong>The "Fix User Restaurant ID" button will update the user's restaurant ID to match the actual
+                restaurant.</strong></p>
+        <p>This is safe and will NOT delete any data.</p>
+    </div>
+
+    <script>
+        // Show fix output when fix button is clicked
+        document.querySelector('button.danger').addEventListener('click', () => {
+            document.getElementById('fixOutput').style.display = 'block';
+        });
+    </script>
+</body>
+
+</html>

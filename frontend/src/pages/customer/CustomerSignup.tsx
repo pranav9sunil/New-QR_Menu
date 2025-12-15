@@ -96,7 +96,7 @@ export default function CustomerSignup() {
             const qSession = query(
                 sessionsRef,
                 where('tableId', '==', tId),
-                where('status', '==', 'active'),
+                where('status', 'in', ['active', 'payment_pending']),
                 limit(1)
             );
             const sessionSnap = await getDocs(qSession);
@@ -114,7 +114,16 @@ export default function CustomerSignup() {
 
     const handleSignup = async (e: React.FormEvent) => {
         e.preventDefault();
-        if (!name || !phone || !tableId || !restaurantId) return;
+        console.log('🎯 Starting signup process...');
+        console.log('  Name:', name);
+        console.log('  Phone:', phone);
+        console.log('  Table ID:', tableId);
+        console.log('  Restaurant ID:', restaurantId);
+
+        if (!name || !phone || !tableId || !restaurantId) {
+            console.error('❌ Missing required fields');
+            return;
+        }
 
         setLoading(true);
         setError('');
@@ -123,6 +132,7 @@ export default function CustomerSignup() {
             let currentSessionId = sessionId;
 
             if (!currentSessionId) {
+                console.log('📝 Creating new session...');
                 // Create new session
                 const code = Math.floor(Math.random() * 90 + 10).toString(); // 2 digit code
                 const sessionData = {
@@ -134,31 +144,44 @@ export default function CustomerSignup() {
                     createdAt: serverTimestamp(),
                     totalAmount: 0,
                 };
+                console.log('  Session data:', sessionData);
+
                 const docRef = await addDoc(collection(db, 'sessions'), sessionData);
                 currentSessionId = docRef.id;
+                console.log('✅ Session created:', currentSessionId);
                 setSessionId(currentSessionId);
 
                 // Clear reservation if exists
+                console.log('🧹 Clearing reservation...');
                 await updateDoc(doc(db, 'tables', tableId), {
                     reservation: deleteField()
                 });
+                console.log('✅ Reservation cleared');
+            } else {
+                console.log('♻️ Using existing session:', currentSessionId);
             }
 
             // Add customer to session subcollection
+            console.log('👤 Adding customer to session...');
             await addDoc(collection(db, `sessions/${currentSessionId}/customers`), {
                 name,
                 phone,
                 joinedAt: serverTimestamp(),
             });
+            console.log('✅ Customer added');
 
             // Store customer info in local storage for session persistence
             localStorage.setItem('customerName', name);
             localStorage.setItem('customerPhone', phone);
             localStorage.setItem('sessionId', currentSessionId);
+            console.log('✅ Data saved to localStorage');
 
+            console.log('✅ Signup complete! Moving to verification step');
             setStep('verify');
-        } catch (err) {
-            console.error('Error signing up:', err);
+        } catch (err: any) {
+            console.error('❌ Error signing up:', err);
+            console.error('  Error code:', err.code);
+            console.error('  Error message:', err.message);
             setError('Failed to sign up. Please try again.');
         } finally {
             setLoading(false);

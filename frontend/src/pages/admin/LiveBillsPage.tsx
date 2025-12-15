@@ -9,6 +9,7 @@ import {
     doc,
     updateDoc,
     addDoc,
+    deleteDoc,
     onSnapshot,
     serverTimestamp,
 } from 'firebase/firestore';
@@ -53,7 +54,7 @@ export default function LiveBillsPage() {
     // Discount Modal
     const [discountModalOpen, setDiscountModalOpen] = useState(false);
     const [discountType, setDiscountType] = useState<'percentage' | 'fixed'>('percentage');
-    const [discountValue, setDiscountValue] = useState(0);
+    const [discountValue, setDiscountValue] = useState<number | string>('');
 
     // Manual Order Modal
     const [manualOrderModalOpen, setManualOrderModalOpen] = useState(false);
@@ -263,6 +264,12 @@ export default function LiveBillsPage() {
 
         try {
             const updatedItems = order.items.filter((_, index) => index !== itemIndex);
+
+            if (updatedItems.length === 0) {
+                await deleteDoc(doc(db, 'orders', order.id));
+                return;
+            }
+
             const subtotal = updatedItems.reduce((sum, item) => sum + (item.price * item.quantity), 0);
             const tax = subtotal * 0.08;
             const discount = order.discount || 0;
@@ -285,24 +292,45 @@ export default function LiveBillsPage() {
     const handleApplyDiscount = async () => {
         if (!selectedSession) return;
 
+        const val = typeof discountValue === 'string' ? parseFloat(discountValue) : discountValue;
+        if (isNaN(val) || val < 0) {
+            alert('Please enter a valid discount value');
+            return;
+        }
+
         try {
             for (const order of selectedSession.orders) {
                 const subtotal = order.items.reduce((sum, item) => sum + (item.price * item.quantity), 0);
                 const tax = subtotal * 0.08;
-                const discountAmount = discountType === 'percentage'
-                    ? (subtotal + tax) * (discountValue / 100)
-                    : discountValue;
-                const total = subtotal + tax - discountAmount;
+                const totalBeforeDiscount = subtotal + tax;
+
+                let discountAmount = 0;
+                if (discountType === 'percentage') {
+                    if (val > 100) {
+                        alert('Percentage discount cannot exceed 100%');
+                        return;
+                    }
+                    discountAmount = totalBeforeDiscount * (val / 100);
+                } else {
+                    discountAmount = val;
+                }
+
+                if (discountAmount > totalBeforeDiscount) {
+                    alert('Discount cannot exceed total order value');
+                    return;
+                }
+
+                const total = totalBeforeDiscount - discountAmount;
 
                 await updateDoc(doc(db, 'orders', order.id), {
-                    discount: discountValue,
+                    discount: val,
                     discountType,
                     total,
                 });
             }
 
             setDiscountModalOpen(false);
-            setDiscountValue(0);
+            setDiscountValue('');
         } catch (error) {
             console.error('Error applying discount:', error);
         }
@@ -485,196 +513,205 @@ export default function LiveBillsPage() {
         <div className="space-y-6">
             <div className="flex items-center justify-between">
                 <h1 className="text-3xl font-bold text-gray-800">Live Bills</h1>
-                <Button
-                    onClick={() => setManualOrderModalOpen(true)}
-                    className="bg-gradient-to-r from-orange-500 to-red-500 hover:from-orange-600 hover:to-red-600 text-white"
-                >
-                    <Plus className="h-4 w-4 mr-2" />
-                    Create Manual Order
-                </Button>
             </div>
 
-            {sessions.length === 0 ? (
-                <Card>
-                    <CardContent className="py-12 text-center text-muted-foreground">
-                        <p>No active orders. Create a manual order to get started.</p>
-                    </CardContent>
-                </Card>
-            ) : (
-                <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-                    {/* Left: Table List */}
-                    <div className="lg:col-span-1 space-y-4">
-                        <h2 className="text-xl font-semibold text-gray-800">Active Tables</h2>
-                        {sessions.map((session) => (
-                            <Card
-                                key={session.sessionId}
-                                className={`cursor-pointer transition-all border-orange-100 ${selectedSession?.sessionId === session.sessionId
-                                    ? 'ring-2 ring-orange-500 bg-orange-50'
-                                    : 'hover:shadow-md'
-                                    }`}
-                                onClick={() => setSelectedSession(session)}
-                            >
-                                <CardContent className="p-4">
-                                    <div className="flex justify-between items-start">
-                                        <div>
-                                            <h3 className="font-bold text-lg">{session.tableName}</h3>
-                                            <p className="text-sm text-muted-foreground">
-                                                {session.orders.length} order(s)
-                                            </p>
-                                        </div>
-                                        <div className="text-right">
-                                            <p className="font-bold text-orange-600">
-                                                €{session.totalAmount.toFixed(2)}
-                                            </p>
-                                        </div>
-                                    </div>
-                                </CardContent>
-                            </Card>
-                        ))}
-                    </div>
-
-                    {/* Right: Order Details */}
-                    <div className="lg:col-span-2">
-                        {selectedSession ? (
-                            <Card className="border-orange-100">
-                                <CardHeader>
-                                    <div className="flex justify-between items-start">
-                                        <div>
-                                            <CardTitle className="text-2xl">{selectedSession.tableName}</CardTitle>
-                                            <p className="text-sm text-muted-foreground mt-1">
-                                                Session ID: {selectedSession.sessionId}
-                                            </p>
-                                        </div>
-                                        <div className="flex gap-2">
-                                            <Button
-                                                variant="outline"
-                                                size="sm"
-                                                onClick={() => setAddItemModalOpen(true)}
-                                                className="border-orange-200 hover:bg-orange-50"
-                                            >
-                                                <Plus className="h-4 w-4 mr-2" />
-                                                Add Item
-                                            </Button>
-                                            <Button
-                                                variant="outline"
-                                                size="sm"
-                                                onClick={() => setDiscountModalOpen(true)}
-                                                className="border-orange-200 hover:bg-orange-50"
-                                            >
-                                                <Percent className="h-4 w-4 mr-2" />
-                                                Discount
-                                            </Button>
-                                            <Button
-                                                size="sm"
-                                                onClick={() => setPrintModalOpen(true)}
-                                                className="bg-gradient-to-r from-orange-500 to-red-500 hover:from-orange-600 hover:to-red-600 text-white"
-                                            >
-                                                <Printer className="h-4 w-4 mr-2" />
-                                                Print Bill
-                                            </Button>
-                                        </div>
-                                    </div>
-                                </CardHeader>
-                                <CardContent className="space-y-6">
-                                    {selectedSession.orders.map((order) => (
-                                        <div key={order.id} className="space-y-3">
-                                            <div className="flex justify-between items-center">
-                                                <h3 className="font-semibold text-gray-700">
-                                                    Order #{order.id.slice(-6)}
-                                                </h3>
-                                                <span className={`text-xs px-2 py-1 rounded-full ${order.status === 'completed' ? 'bg-green-100 text-green-700' :
-                                                    order.status === 'preparing' ? 'bg-blue-100 text-blue-700' :
-                                                        order.status === 'ready' ? 'bg-purple-100 text-purple-700' :
-                                                            'bg-yellow-100 text-yellow-700'
-                                                    }`}>
-                                                    {order.status}
-                                                </span>
+            {
+                sessions.length === 0 ? (
+                    <Card>
+                        <CardContent className="py-12 text-center text-muted-foreground">
+                            <p>No active orders. Create a manual order to get started.</p>
+                        </CardContent>
+                    </Card>
+                ) : (
+                    <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                        {/* Left: Table List */}
+                        <div className="lg:col-span-1 space-y-4">
+                            <h2 className="text-xl font-semibold text-gray-800">Active Tables</h2>
+                            {sessions.map((session) => (
+                                <Card
+                                    key={session.sessionId}
+                                    className={`cursor-pointer transition-all border-orange-100 ${selectedSession?.sessionId === session.sessionId
+                                        ? 'ring-2 ring-orange-500 bg-orange-50'
+                                        : 'hover:shadow-md'
+                                        }`}
+                                    onClick={() => setSelectedSession(session)}
+                                >
+                                    <CardContent className="p-4">
+                                        <div className="flex justify-between items-start">
+                                            <div>
+                                                <h3 className="font-bold text-lg">{session.tableName}</h3>
+                                                <p className="text-sm text-muted-foreground">
+                                                    {session.orders.length} order(s)
+                                                </p>
                                             </div>
+                                            <div className="text-right">
+                                                <p className="font-bold text-orange-600">
+                                                    €{session.totalAmount.toFixed(2)}
+                                                </p>
+                                            </div>
+                                        </div>
+                                    </CardContent>
+                                </Card>
+                            ))}
+                        </div>
 
-                                            <div className="space-y-2">
-                                                {order.items.map((item, index) => (
-                                                    <div key={index} className="flex justify-between items-center p-2 bg-gray-50 rounded">
-                                                        <div className="flex-1">
-                                                            <p className="font-medium">{item.name}</p>
-                                                            <p className="text-sm text-muted-foreground">
-                                                                €{item.price.toFixed(2)} each
-                                                            </p>
-                                                        </div>
-                                                        <div className="flex items-center gap-3">
-                                                            <div className="flex items-center gap-2">
+                        {/* Right: Order Details */}
+                        <div className="lg:col-span-2">
+                            {selectedSession ? (
+                                <Card className="border-orange-100">
+                                    <CardHeader>
+                                        <div className="flex justify-between items-start">
+                                            <div>
+                                                <CardTitle className="text-2xl">{selectedSession.tableName}</CardTitle>
+                                                <p className="text-sm text-muted-foreground mt-1">
+                                                    Session ID: {selectedSession.sessionId}
+                                                </p>
+                                            </div>
+                                            <div className="flex gap-2">
+                                                <Button
+                                                    variant="outline"
+                                                    size="sm"
+                                                    onClick={() => setAddItemModalOpen(true)}
+                                                    className="border-orange-200 hover:bg-orange-50"
+                                                >
+                                                    <Plus className="h-4 w-4 mr-2" />
+                                                    Add Item
+                                                </Button>
+                                                <Button
+                                                    variant="outline"
+                                                    size="sm"
+                                                    onClick={() => {
+                                                        // Pre-fill discount from the first order if available
+                                                        const firstOrder = selectedSession.orders[0];
+                                                        if (firstOrder && firstOrder.discount) {
+                                                            setDiscountValue(firstOrder.discount);
+                                                            setDiscountType(firstOrder.discountType || 'percentage');
+                                                        } else {
+                                                            setDiscountValue('');
+                                                            setDiscountType('percentage');
+                                                        }
+                                                        setDiscountModalOpen(true);
+                                                    }}
+                                                    className="border-orange-200 hover:bg-orange-50"
+                                                >
+                                                    <Percent className="h-4 w-4 mr-2" />
+                                                    Discount
+                                                </Button>
+                                                <Button
+                                                    size="sm"
+                                                    onClick={() => setPrintModalOpen(true)}
+                                                    className="bg-gradient-to-r from-orange-500 to-red-500 hover:from-orange-600 hover:to-red-600 text-white"
+                                                >
+                                                    <Printer className="h-4 w-4 mr-2" />
+                                                    Print Bill
+                                                </Button>
+                                            </div>
+                                        </div>
+                                    </CardHeader>
+                                    <CardContent className="space-y-6">
+                                        {selectedSession.orders.map((order) => (
+                                            <div key={order.id} className="space-y-3">
+                                                <div className="flex justify-between items-center">
+                                                    <h3 className="font-semibold text-gray-700">
+                                                        Order #{order.id.slice(-6)}
+                                                    </h3>
+                                                    <span className={`text-xs px-2 py-1 rounded-full ${order.status === 'completed' ? 'bg-green-100 text-green-700' :
+                                                        order.status === 'preparing' ? 'bg-blue-100 text-blue-700' :
+                                                            order.status === 'ready' ? 'bg-purple-100 text-purple-700' :
+                                                                'bg-yellow-100 text-yellow-700'
+                                                        }`}>
+                                                        {order.status}
+                                                    </span>
+                                                </div>
+
+                                                <div className="space-y-2">
+                                                    {order.items.map((item, index) => (
+                                                        <div key={index} className="flex justify-between items-center p-2 bg-gray-50 rounded">
+                                                            <div className="flex-1">
+                                                                <p className="font-medium">{item.name}</p>
+                                                                <p className="text-sm text-muted-foreground">
+                                                                    €{item.price.toFixed(2)} each
+                                                                </p>
+                                                            </div>
+                                                            <div className="flex items-center gap-3">
+                                                                <div className="flex items-center gap-2">
+                                                                    <Button
+                                                                        variant="outline"
+                                                                        size="icon"
+                                                                        className="h-8 w-8"
+                                                                        onClick={() => handleUpdateQuantity(order, index, item.quantity - 1)}
+                                                                        disabled={item.quantity <= 1}
+                                                                    >
+                                                                        <Minus className="h-4 w-4" />
+                                                                    </Button>
+                                                                    <span className="w-8 text-center font-semibold">
+                                                                        {item.quantity}
+                                                                    </span>
+                                                                    <Button
+                                                                        variant="outline"
+                                                                        size="icon"
+                                                                        className="h-8 w-8"
+                                                                        onClick={() => handleUpdateQuantity(order, index, item.quantity + 1)}
+                                                                    >
+                                                                        <Plus className="h-4 w-4" />
+                                                                    </Button>
+                                                                </div>
+                                                                <p className="font-semibold text-orange-600 w-20 text-right">
+                                                                    €{(item.price * item.quantity).toFixed(2)}
+                                                                </p>
                                                                 <Button
-                                                                    variant="outline"
+                                                                    variant="ghost"
                                                                     size="icon"
-                                                                    className="h-8 w-8"
-                                                                    onClick={() => handleUpdateQuantity(order, index, item.quantity - 1)}
-                                                                    disabled={item.quantity <= 1}
+                                                                    className="h-8 w-8 text-red-500 hover:text-red-700 hover:bg-red-50"
+                                                                    onClick={() => handleRemoveItem(order, index)}
                                                                 >
-                                                                    <Minus className="h-4 w-4" />
-                                                                </Button>
-                                                                <span className="w-8 text-center font-semibold">
-                                                                    {item.quantity}
-                                                                </span>
-                                                                <Button
-                                                                    variant="outline"
-                                                                    size="icon"
-                                                                    className="h-8 w-8"
-                                                                    onClick={() => handleUpdateQuantity(order, index, item.quantity + 1)}
-                                                                >
-                                                                    <Plus className="h-4 w-4" />
+                                                                    <Trash2 className="h-4 w-4" />
                                                                 </Button>
                                                             </div>
-                                                            <p className="font-semibold text-orange-600 w-20 text-right">
-                                                                €{(item.price * item.quantity).toFixed(2)}
-                                                            </p>
-                                                            <Button
-                                                                variant="ghost"
-                                                                size="icon"
-                                                                className="h-8 w-8 text-red-500 hover:text-red-700 hover:bg-red-50"
-                                                                onClick={() => handleRemoveItem(order, index)}
-                                                            >
-                                                                <Trash2 className="h-4 w-4" />
-                                                            </Button>
                                                         </div>
-                                                    </div>
-                                                ))}
-                                            </div>
+                                                    ))}
+                                                </div>
 
-                                            <div className="border-t pt-3 space-y-1 text-sm">
-                                                <div className="flex justify-between">
-                                                    <span className="text-muted-foreground">Subtotal:</span>
-                                                    <span>€{order.subtotal.toFixed(2)}</span>
-                                                </div>
-                                                <div className="flex justify-between text-sm">
-                                                    <span>Tax (8%):</span>
-                                                    <span>€{order.tax.toFixed(2)}</span>
-                                                </div>
-                                                {order.discount && order.discount > 0 && (
-                                                    <div className="flex justify-between text-sm text-green-600">
-                                                        <span>Discount:</span>
-                                                        <span>-€{(order.discountType === 'percentage'
-                                                            ? (order.subtotal + order.tax) * (order.discount / 100)
-                                                            : order.discount).toFixed(2)}</span>
+                                                <div className="border-t pt-3 space-y-1 text-sm">
+                                                    <div className="flex justify-between">
+                                                        <span className="text-muted-foreground">Subtotal:</span>
+                                                        <span>€{order.subtotal.toFixed(2)}</span>
                                                     </div>
-                                                )}
-                                                <div className="flex justify-between font-bold text-lg pt-2 border-t">
-                                                    <span>Total:</span>
-                                                    <span className="text-orange-600">€{order.total.toFixed(2)}</span>
+                                                    <div className="flex justify-between text-sm">
+                                                        <span>Tax (8%):</span>
+                                                        <span>€{order.tax.toFixed(2)}</span>
+                                                    </div>
+                                                    {order.discount && order.discount > 0 && (
+                                                        <div className="flex justify-between text-sm text-green-600">
+                                                            <span>
+                                                                Discount
+                                                                {order.discountType === 'percentage' && ` (${order.discount}%)`}:
+                                                            </span>
+                                                            <span>-€{(order.discountType === 'percentage'
+                                                                ? (order.subtotal + order.tax) * (order.discount / 100)
+                                                                : order.discount).toFixed(2)}</span>
+                                                        </div>
+                                                    )}
+                                                    <div className="flex justify-between font-bold text-lg pt-2 border-t">
+                                                        <span>Total:</span>
+                                                        <span className="text-orange-600">€{order.total.toFixed(2)}</span>
+                                                    </div>
                                                 </div>
                                             </div>
-                                        </div>
-                                    ))}
-                                </CardContent>
-                            </Card>
-                        ) : (
-                            <Card className="border-orange-100">
-                                <CardContent className="py-12 text-center text-muted-foreground">
-                                    <p>Select a table to view order details</p>
-                                </CardContent>
-                            </Card>
-                        )}
+                                        ))}
+                                    </CardContent>
+                                </Card>
+                            ) : (
+                                <Card className="border-orange-100">
+                                    <CardContent className="py-12 text-center text-muted-foreground">
+                                        <p>Select a table to view order details</p>
+                                    </CardContent>
+                                </Card>
+                            )}
+                        </div>
                     </div>
-                </div>
-            )}
+                )
+            }
 
             {/* Add Item Modal */}
             <Dialog open={addItemModalOpen} onOpenChange={setAddItemModalOpen}>
@@ -776,7 +813,7 @@ export default function LiveBillsPage() {
                                 min="0"
                                 step="0.01"
                                 value={discountValue}
-                                onChange={(e) => setDiscountValue(parseFloat(e.target.value) || 0)}
+                                onChange={(e) => setDiscountValue(e.target.value)}
                                 placeholder={discountType === 'percentage' ? 'Enter percentage' : 'Enter amount'}
                             />
                         </div>
@@ -982,6 +1019,6 @@ export default function LiveBillsPage() {
                     </DialogFooter>
                 </DialogContent>
             </Dialog>
-        </div>
+        </div >
     );
 }

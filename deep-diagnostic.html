@@ -1,0 +1,337 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <title>Deep Database Diagnostic</title>
+    <style>
+        body {
+            font-family: 'Courier New', monospace;
+            max-width: 1400px;
+            margin: 20px auto;
+            padding: 20px;
+            background: #1e1e1e;
+            color: #d4d4d4;
+        }
+
+        h1,
+        h2,
+        h3 {
+            color: #4ec9b0;
+        }
+
+        .section {
+            background: #252526;
+            padding: 15px;
+            border-radius: 4px;
+            margin: 10px 0;
+            border-left: 4px solid #007acc;
+        }
+
+        .error {
+            color: #f48771;
+            font-weight: bold;
+        }
+
+        .success {
+            color: #4ec9b0;
+            font-weight: bold;
+        }
+
+        .warning {
+            color: #dcdcaa;
+            font-weight: bold;
+        }
+
+        button {
+            background: #0e639c;
+            color: white;
+            padding: 10px 20px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            margin: 5px;
+            font-family: inherit;
+        }
+
+        button:hover {
+            background: #1177bb;
+        }
+
+        button.danger {
+            background: #f48771;
+        }
+
+        button.danger:hover {
+            background: #ff6b6b;
+        }
+
+        pre {
+            background: #1e1e1e;
+            padding: 10px;
+            border: 1px solid #3c3c3c;
+            overflow-x: auto;
+            color: #ce9178;
+        }
+
+        .key {
+            color: #9cdcfe;
+        }
+
+        .value {
+            color: #ce9178;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 10px 0;
+        }
+
+        th,
+        td {
+            padding: 8px;
+            text-align: left;
+            border: 1px solid #3c3c3c;
+        }
+
+        th {
+            background: #0e639c;
+            color: white;
+        }
+
+        tr:nth-child(even) {
+            background: #2d2d30;
+        }
+    </style>
+    <script type="module">
+        import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js';
+        import { getFirestore, collection, getDocs, doc, updateDoc, getDoc } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js';
+        import { getAuth, signInWithEmailAndPassword } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js';
+
+        const firebaseConfig = {
+            apiKey: "AIzaSyAT2acMkrTKsMMaW2aR5aGLTMdYQbje7i8",
+            authDomain: "qr-ordering-system-c80d4.firebaseapp.com",
+            projectId: "qr-ordering-system-c80d4",
+            storageBucket: "qr-ordering-system-c80d4.firebasestorage.app",
+            messagingSenderId: "380518528753",
+            appId: "1:380518528753:web:4893e0ed933138b5f99b50"
+        };
+
+        const app = initializeApp(firebaseConfig);
+        const db = getFirestore(app);
+        const auth = getAuth(app);
+
+        function log(message, type = 'info') {
+            const output = document.getElementById('output');
+            const className = type === 'error' ? 'error' : type === 'success' ? 'success' : type === 'warning' ? 'warning' : '';
+            output.innerHTML += `<div class="${className}">${message}</div>`;
+        }
+
+        async function fullDiagnostic() {
+            const output = document.getElementById('output');
+            output.innerHTML = '';
+            log('='.repeat(80), 'success');
+            log('FULL DATABASE DIAGNOSTIC', 'success');
+            log('='.repeat(80), 'success');
+
+            try {
+                // 1. Check Restaurants
+                log('\n📍 RESTAURANTS COLLECTION:', 'warning');
+                const restaurantsSnap = await getDocs(collection(db, 'restaurants'));
+                log(`Found ${restaurantsSnap.size} restaurant(s)\n`);
+
+                let actualRestaurantId = null;
+                restaurantsSnap.forEach(doc => {
+                    actualRestaurantId = doc.id;
+                    log(`Restaurant ID: ${doc.id}`);
+                    log(`Name: ${doc.data().name}`);
+                    log(`Tax Rate: ${doc.data().taxRate}`);
+                    log('---');
+                });
+
+                // 2. Check Users
+                log('\n👤 USERS COLLECTION:', 'warning');
+                const usersSnap = await getDocs(collection(db, 'users'));
+                log(`Found ${usersSnap.size} user(s)\n`);
+
+                let userRestaurantIds = [];
+                usersSnap.forEach(doc => {
+                    const data = doc.data();
+                    userRestaurantIds.push(data.restaurantId);
+                    log(`User UID: ${doc.id}`);
+                    log(`Email: ${data.email}`);
+                    log(`Restaurant ID: ${data.restaurantId || 'NULL/UNDEFINED'}`);
+                    log(`Role: ${data.role}`);
+                    log('---');
+                });
+
+                // 3. Check Tables
+                log('\n🪑 TABLES COLLECTION:', 'warning');
+                const tablesSnap = await getDocs(collection(db, 'tables'));
+                log(`Found ${tablesSnap.size} table(s)\n`);
+
+                let tablesByRestaurant = {};
+                tablesSnap.forEach(doc => {
+                    const data = doc.data();
+                    const restId = data.restaurantId || 'NULL';
+                    if (!tablesByRestaurant[restId]) {
+                        tablesByRestaurant[restId] = [];
+                    }
+                    tablesByRestaurant[restId].push({
+                        id: doc.id,
+                        name: data.name,
+                        seats: data.seats
+                    });
+                });
+
+                for (const [restId, tables] of Object.entries(tablesByRestaurant)) {
+                    log(`Restaurant ID: ${restId} → ${tables.length} table(s)`);
+                    tables.forEach(t => {
+                        log(`  - ${t.name} (${t.seats} seats)`);
+                    });
+                }
+
+                // 4. Analysis
+                log('\n🔍 ANALYSIS:', 'warning');
+                log('='.repeat(80));
+
+                const userRestId = userRestaurantIds[0];
+                const tableRestIds = Object.keys(tablesByRestaurant);
+
+                log(`\nActual Restaurant ID: ${actualRestaurantId}`);
+                log(`User's Restaurant ID: ${userRestId || 'NULL/UNDEFINED'}`);
+                log(`Table Restaurant IDs: ${tableRestIds.join(', ')}`);
+
+                if (!userRestId || userRestId === 'undefined' || userRestId === 'null') {
+                    log('\n❌ PROBLEM FOUND: User has NULL/UNDEFINED restaurant ID!', 'error');
+                    log('This is why tables are not showing.', 'error');
+                    window.needsUserFix = true;
+                    window.correctRestaurantId = actualRestaurantId;
+                } else if (userRestId !== actualRestaurantId) {
+                    log(`\n❌ PROBLEM FOUND: User restaurant ID (${userRestId}) doesn't match actual restaurant (${actualRestaurantId})`, 'error');
+                    window.needsUserFix = true;
+                    window.correctRestaurantId = actualRestaurantId;
+                } else if (!tableRestIds.includes(userRestId)) {
+                    log(`\n❌ PROBLEM FOUND: No tables exist for restaurant ID: ${userRestId}`, 'error');
+                    log('Tables exist for:', tableRestIds.join(', '), 'error');
+                    window.needsTableFix = true;
+                    window.correctRestaurantId = actualRestaurantId;
+                } else {
+                    log('\n✅ Everything looks correct!', 'success');
+                    log('If tables still not showing, check browser console for errors.', 'warning');
+                }
+
+                // 5. Show fix buttons
+                document.getElementById('fixButtons').style.display = 'block';
+
+            } catch (error) {
+                log(`\n❌ ERROR: ${error.message}`, 'error');
+                console.error(error);
+            }
+        }
+
+        async function fixUserRestaurantId() {
+            const output = document.getElementById('fixOutput');
+            output.innerHTML = '';
+            output.style.display = 'block';
+
+            const correctId = window.correctRestaurantId;
+            if (!correctId) {
+                output.innerHTML = '<p class="error">Cannot determine correct restaurant ID. Run diagnostic first.</p>';
+                return;
+            }
+
+            if (!confirm(`This will set all users' restaurant ID to: ${correctId}\n\nContinue?`)) {
+                return;
+            }
+
+            try {
+                const usersSnap = await getDocs(collection(db, 'users'));
+
+                for (const userDoc of usersSnap.docs) {
+                    await updateDoc(doc(db, 'users', userDoc.id), {
+                        restaurantId: correctId
+                    });
+                    output.innerHTML += `<p class="success">✓ Updated ${userDoc.data().email} → restaurantId: ${correctId}</p>`;
+                }
+
+                output.innerHTML += '<p class="success"><strong>✓ DONE! Now logout and login again in your admin panel.</strong></p>';
+                output.innerHTML += '<p class="warning">Go to: http://localhost:5173/admin → Logout → Login again</p>';
+
+            } catch (error) {
+                output.innerHTML = `<p class="error">Error: ${error.message}</p>`;
+            }
+        }
+
+        async function fixTableRestaurantIds() {
+            const output = document.getElementById('fixOutput');
+            output.innerHTML = '';
+            output.style.display = 'block';
+
+            const correctId = window.correctRestaurantId;
+            if (!correctId) {
+                output.innerHTML = '<p class="error">Cannot determine correct restaurant ID. Run diagnostic first.</p>';
+                return;
+            }
+
+            if (!confirm(`This will set all tables' restaurant ID to: ${correctId}\n\nContinue?`)) {
+                return;
+            }
+
+            try {
+                const tablesSnap = await getDocs(collection(db, 'tables'));
+
+                for (const tableDoc of tablesSnap.docs) {
+                    await updateDoc(doc(db, 'tables', tableDoc.id), {
+                        restaurantId: correctId
+                    });
+                    output.innerHTML += `<p class="success">✓ Updated ${tableDoc.data().name} → restaurantId: ${correctId}</p>`;
+                }
+
+                output.innerHTML += '<p class="success"><strong>✓ DONE! Refresh your admin panel.</strong></p>';
+
+            } catch (error) {
+                output.innerHTML = `<p class="error">Error: ${error.message}</p>`;
+            }
+        }
+
+        window.fullDiagnostic = fullDiagnostic;
+        window.fixUserRestaurantId = fixUserRestaurantId;
+        window.fixTableRestaurantIds = fixTableRestaurantIds;
+        window.addEventListener('load', fullDiagnostic);
+    </script>
+</head>
+
+<body>
+    <h1>🔬 Deep Database Diagnostic</h1>
+
+    <div class="section">
+        <button onclick="fullDiagnostic()">🔄 Re-run Full Diagnostic</button>
+    </div>
+
+    <div id="output" class="section">
+        Loading...
+    </div>
+
+    <div id="fixButtons" class="section" style="display: none;">
+        <h3>🔧 Fix Options</h3>
+        <button class="danger" onclick="fixUserRestaurantId()">Fix User Restaurant ID</button>
+        <button class="danger" onclick="fixTableRestaurantIds()">Fix Table Restaurant IDs</button>
+    </div>
+
+    <div id="fixOutput" class="section" style="display: none;">
+    </div>
+
+    <div class="section" style="background: #3c2415; border-left-color: #dcdcaa;">
+        <h3>⚠️ How This Works</h3>
+        <p>This tool will:</p>
+        <ol>
+            <li>Check all restaurants, users, and tables in Firebase</li>
+            <li>Identify any mismatches in restaurant IDs</li>
+            <li>Provide fix buttons to align everything</li>
+        </ol>
+        <p><strong>No data will be deleted - only restaurant ID fields will be updated.</strong></p>
+    </div>
+</body>
+
+</html>

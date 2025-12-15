@@ -15,6 +15,7 @@ import {
 } from 'firebase/firestore';
 import type { MenuItem, CartItem, Order } from '@/types';
 import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
 import { Card, CardContent } from '@/components/ui/card';
 import { ChefHat, ShoppingCart, Plus, Minus, Trash2, Receipt, Download, Search, History, CheckCircle2, ChevronDown } from 'lucide-react';
 import { jsPDF } from 'jspdf';
@@ -70,6 +71,20 @@ export default function MenuOrderPage() {
     // Mobile Category Modal State
     const [mobileCategoryModalOpen, setMobileCategoryModalOpen] = useState(false);
 
+    // Toast notification state
+    const [showToast, setShowToast] = useState(false);
+    const [toastMessage, setToastMessage] = useState('');
+
+    // Placing order state to prevent duplicate submissions
+    const [placingOrder, setPlacingOrder] = useState(false);
+
+    // Tip dialog state
+    const [tipDialogOpen, setTipDialogOpen] = useState(false);
+    const [selectedTipPercentage, setSelectedTipPercentage] = useState<number | null>(null);
+    const [customTipAmount, setCustomTipAmount] = useState('');
+    const [calculatedTip, setCalculatedTip] = useState(0);
+    const [sessionTipAmount, setSessionTipAmount] = useState(0);
+
     useEffect(() => {
         const storedSessionId = localStorage.getItem('sessionId');
         if (!storedSessionId) {
@@ -85,6 +100,9 @@ export default function MenuOrderPage() {
             if (docSnap.exists()) {
                 const data = docSnap.data();
                 if (data.status === 'closed') {
+                    // Store tip amount from session
+                    setSessionTipAmount(data.tipAmount || 0);
+
                     // Fetch final orders
                     const ordersRef = collection(db, 'orders');
                     const q = query(ordersRef, where('sessionId', '==', storedSessionId));
@@ -143,6 +161,7 @@ export default function MenuOrderPage() {
         // If it's a custom item (has notes or customizations), always add as new
         if ('selectedCustomizations' in item || 'notes' in item) {
             setCart([...cart, { ...item, quantity: 1, id: `${item.id}-${Date.now()}` } as CartItem]);
+            showAddedToCartToast(item.name);
             return;
         }
 
@@ -159,6 +178,13 @@ export default function MenuOrderPage() {
         } else {
             setCart([...cart, { ...item, quantity: 1 } as CartItem]);
         }
+        showAddedToCartToast(item.name);
+    };
+
+    const showAddedToCartToast = (itemName: string) => {
+        setToastMessage(`${itemName} added to cart`);
+        setShowToast(true);
+        setTimeout(() => setShowToast(false), 2000);
     };
 
     const updateQuantity = (itemId: string, change: number) => {
@@ -182,8 +208,9 @@ export default function MenuOrderPage() {
     const total = subtotal + tax;
 
     const handleCheckout = async () => {
-        if (cart.length === 0 || !sessionId) return;
+        if (cart.length === 0 || !sessionId || placingOrder) return;
 
+        setPlacingOrder(true);
         try {
             // Find table ID
             const tablesRef = collection(db, 'tables');
@@ -216,12 +243,23 @@ export default function MenuOrderPage() {
 
             await addDoc(collection(db, 'orders'), order);
 
+            // Reset session status to active (overriding payment_pending) and clear any set tip
+            // This ensures the table shows as "Occupied" (grey) instead of "Bill Ready" (red blinking)
+            const sessionRef = doc(db, 'sessions', sessionId);
+            await updateDoc(sessionRef, {
+                status: 'active',
+                tipAmount: 0,
+                tipPercentage: null
+            });
+
             alert('Order placed successfully!');
             setCart([]);
             setCartOpen(false);
         } catch (error) {
             console.error('Error placing order:', error);
             alert('Failed to place order. Please try again.');
+        } finally {
+            setPlacingOrder(false);
         }
     };
 
@@ -300,15 +338,63 @@ export default function MenuOrderPage() {
 
     const handleRequestBill = async () => {
         if (!sessionId) return;
+
+        // Fetch current orders to ensure we have the correct total for tip calculation
+        try {
+            setLoading(true);
+            const ordersRef = collection(db, 'orders');
+            const q = query(ordersRef, where('sessionId', '==', sessionId));
+            const snapshot = await getDocs(q);
+            const orders: Order[] = [];
+            snapshot.forEach((doc) => {
+                orders.push({ id: doc.id, ...doc.data() } as Order);
+            });
+            setBillOrders(orders);
+            setTipDialogOpen(true);
+        } catch (error) {
+            console.error('Error fetching orders for bill:', error);
+            alert('Failed to load bill information');
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    const handleConfirmBillWithTip = async () => {
+        if (!sessionId) return;
         try {
             const sessionRef = doc(db, 'sessions', sessionId);
-            await updateDoc(sessionRef, { status: 'payment_pending' });
+            await updateDoc(sessionRef, {
+                status: 'payment_pending',
+                tipAmount: calculatedTip,
+                tipPercentage: selectedTipPercentage
+            });
+            setTipDialogOpen(false);
             alert('Server notified! Your bill is on the way.');
         } catch (error) {
             console.error('Error requesting bill:', error);
             alert('Failed to request bill');
         }
     };
+
+    // Calculate tip when percentage or custom amount changes
+    useEffect(() => {
+        if (selectedTipPercentage !== null) {
+            // Calculate based on percentage
+            const billSubtotal = billOrders.reduce((sum, order) => {
+                return sum + order.items.reduce((itemSum, item) => itemSum + (item.price * item.quantity), 0);
+            }, 0);
+
+            // Tip calculated on subtotal only (excluding tax)
+            setCalculatedTip(billSubtotal * (selectedTipPercentage / 100));
+            setCustomTipAmount(''); // Clear custom amount
+        } else if (customTipAmount) {
+            // Use custom amount
+            const amount = parseFloat(customTipAmount);
+            setCalculatedTip(isNaN(amount) ? 0 : amount);
+        } else {
+            setCalculatedTip(0);
+        }
+    }, [selectedTipPercentage, customTipAmount, billOrders, taxRate]);
 
     const handleDownloadBill = () => {
         const doc = new jsPDF();
@@ -332,8 +418,7 @@ export default function MenuOrderPage() {
         let subtotal = 0;
         billOrders.forEach(order => {
             order.items.forEach(item => {
-                doc.text(item.name, 20, yPos);
-                doc.text(`${item.quantity}x`, 130, yPos);
+                doc.text(`${item.name} x${item.quantity}`, 20, yPos);
                 doc.text(`€${(item.price * item.quantity).toFixed(2)}`, 190, yPos, { align: 'right' });
                 yPos += 7;
                 subtotal += item.price * item.quantity;
@@ -345,12 +430,17 @@ export default function MenuOrderPage() {
         yPos += 10;
 
         const tax = subtotal * taxRate;
-        const total = subtotal + tax;
+        const total = subtotal + tax + sessionTipAmount;
 
         doc.text(`Subtotal: €${subtotal.toFixed(2)}`, 190, yPos, { align: 'right' });
         yPos += 7;
         doc.text(`Tax: €${tax.toFixed(2)}`, 190, yPos, { align: 'right' });
-        yPos += 10;
+        yPos += 7;
+        if (sessionTipAmount > 0) {
+            doc.text(`Server Tip: €${sessionTipAmount.toFixed(2)}`, 190, yPos, { align: 'right' });
+            yPos += 7;
+        }
+        yPos += 3;
         doc.setFontSize(14);
         doc.text(`Total: €${total.toFixed(2)}`, 190, yPos, { align: 'right' });
 
@@ -411,15 +501,7 @@ export default function MenuOrderPage() {
                                         </span>
                                     )}
                                 </Button>
-                                <Button
-                                    variant="outline"
-                                    size="icon"
-                                    onClick={handleFetchPastOrders}
-                                    className="border-white/30 text-white hover:bg-white/20 bg-white/10"
-                                    title="Past Orders"
-                                >
-                                    <History className="h-5 w-5" />
-                                </Button>
+
                             </div>                   </div>
                     </div>
                 </div>
@@ -694,6 +776,18 @@ export default function MenuOrderPage() {
                             <ShoppingCart className="h-5 w-5" />
                             Your Order
                         </DialogTitle>
+                        <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => {
+                                setCartOpen(false);
+                                handleFetchPastOrders();
+                            }}
+                            className="absolute right-12 top-3 flex items-center gap-1 text-muted-foreground hover:text-foreground"
+                        >
+                            <History className="h-4 w-4" />
+                            Orders
+                        </Button>
                         <DialogDescription>
                             {tableName} • {cart.length} {cart.length === 1 ? 'item' : 'items'}
                         </DialogDescription>
@@ -766,7 +860,9 @@ export default function MenuOrderPage() {
                                 <Button variant="outline" onClick={() => setCartOpen(false)}>
                                     Continue Shopping
                                 </Button>
-                                <Button onClick={handleCheckout}>Place Order</Button>
+                                <Button onClick={handleCheckout} disabled={placingOrder}>
+                                    {placingOrder ? 'Placing Order...' : 'Place Order'}
+                                </Button>
                             </DialogFooter>
                         </>
                     )}
@@ -785,11 +881,37 @@ export default function MenuOrderPage() {
 
                     <div className="py-6 space-y-4">
                         <div className="bg-slate-50 p-4 rounded-lg space-y-2">
-                            <div className="flex justify-between font-medium">
-                                <span>Total Paid</span>
+                            <div className="flex justify-between text-sm">
+                                <span>Subtotal</span>
                                 <span>
-                                    €{(billOrders.reduce((sum, order) => sum + order.total, 0)).toFixed(2)}
+                                    €{(billOrders.reduce((sum, order) => {
+                                        return sum + order.items.reduce((itemSum, item) => itemSum + (item.price * item.quantity), 0);
+                                    }, 0)).toFixed(2)}
                                 </span>
+                            </div>
+                            <div className="flex justify-between text-sm">
+                                <span>Tax</span>
+                                <span>
+                                    €{(billOrders.reduce((sum, order) => {
+                                        return sum + order.items.reduce((itemSum, item) => itemSum + (item.price * item.quantity), 0);
+                                    }, 0) * taxRate).toFixed(2)}
+                                </span>
+                            </div>
+                            {sessionTipAmount > 0 && (
+                                <div className="flex justify-between text-sm text-green-600 font-medium">
+                                    <span>Server Tip</span>
+                                    <span>€{sessionTipAmount.toFixed(2)}</span>
+                                </div>
+                            )}
+                            <div className="border-t pt-2 mt-2">
+                                <div className="flex justify-between font-bold text-lg">
+                                    <span>Total Paid</span>
+                                    <span>
+                                        €{(billOrders.reduce((sum, order) => {
+                                            return sum + order.items.reduce((itemSum, item) => itemSum + (item.price * item.quantity), 0);
+                                        }, 0) * (1 + taxRate) + sessionTipAmount).toFixed(2)}
+                                    </span>
+                                </div>
                             </div>
                             <p className="text-xs text-muted-foreground text-center pt-2">
                                 A copy of your receipt is available for download.
@@ -957,13 +1079,7 @@ export default function MenuOrderPage() {
                                                 'Invalid Date'
                                             }
                                         </span>
-                                        <span className={`px-2 py-1 rounded-full text-xs font-medium capitalize
-                                            ${order.status === 'completed' ? 'bg-green-100 text-green-700' :
-                                                order.status === 'preparing' ? 'bg-blue-100 text-blue-700' :
-                                                    order.status === 'ready' ? 'bg-purple-100 text-purple-700' :
-                                                        'bg-yellow-100 text-yellow-700'}`}>
-                                            {order.status}
-                                        </span>
+
                                     </div>
                                     <div className="space-y-2">
                                         {order.items.map((item, idx) => (
@@ -1047,6 +1163,91 @@ export default function MenuOrderPage() {
                         </div>
                     </div>
                 </>
+            )}
+
+            {/* Tip Selection Dialog */}
+            <Dialog open={tipDialogOpen} onOpenChange={setTipDialogOpen}>
+                <DialogContent className="bg-white max-w-md">
+                    <DialogHeader>
+                        <DialogTitle>Add Server Tip</DialogTitle>
+                        <DialogDescription>
+                            Show your appreciation for great service
+                        </DialogDescription>
+                    </DialogHeader>
+
+                    <div className="space-y-4 py-4">
+                        {/* Percentage Buttons */}
+                        <div className="space-y-2">
+                            <label className="text-sm font-medium">Quick Select</label>
+                            <div className="grid grid-cols-4 gap-2">
+                                {[5, 10, 18, 25].map((percentage) => (
+                                    <Button
+                                        key={percentage}
+                                        type="button"
+                                        variant={selectedTipPercentage === percentage ? "default" : "outline"}
+                                        onClick={() => setSelectedTipPercentage(percentage)}
+                                        className="h-12"
+                                    >
+                                        {percentage}%
+                                    </Button>
+                                ))}
+                            </div>
+                        </div>
+
+                        {/* Custom Amount */}
+                        <div className="space-y-2">
+                            <label className="text-sm font-medium">Custom Amount (€)</label>
+                            <Input
+                                type="number"
+                                step="0.01"
+                                min="0"
+                                placeholder="Enter custom tip amount"
+                                value={customTipAmount}
+                                onChange={(e) => {
+                                    setCustomTipAmount(e.target.value);
+                                    setSelectedTipPercentage(null);
+                                }}
+                            />
+                        </div>
+
+                        {/* Tip Preview */}
+                        {calculatedTip > 0 && (
+                            <div className="bg-gray-50 p-4 rounded-lg">
+                                <div className="flex justify-between items-center">
+                                    <span className="text-sm font-medium">Server Tip:</span>
+                                    <span className="text-lg font-bold text-green-600">€{calculatedTip.toFixed(2)}</span>
+                                </div>
+                            </div>
+                        )}
+                    </div>
+
+                    <DialogFooter>
+                        <Button variant="outline" onClick={() => {
+                            setTipDialogOpen(false);
+                            setSelectedTipPercentage(null);
+                            setCustomTipAmount('');
+                            setCalculatedTip(0);
+                        }}>
+                            Cancel
+                        </Button>
+                        <Button
+                            onClick={handleConfirmBillWithTip}
+                            disabled={selectedTipPercentage === null && customTipAmount === ''}
+                        >
+                            Confirm & Request Bill
+                        </Button>
+                    </DialogFooter>
+                </DialogContent>
+            </Dialog>
+
+            {/* Toast Notification */}
+            {showToast && (
+                <div className="fixed bottom-20 left-1/2 transform -translate-x-1/2 z-50 animate-in fade-in slide-in-from-bottom-5">
+                    <div className="bg-green-600 text-white px-6 py-3 rounded-lg shadow-lg flex items-center gap-2">
+                        <CheckCircle2 className="h-5 w-5" />
+                        <span className="font-medium">{toastMessage}</span>
+                    </div>
+                </div>
             )}
         </div >
     );

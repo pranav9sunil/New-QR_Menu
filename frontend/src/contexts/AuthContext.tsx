@@ -36,21 +36,28 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
     useEffect(() => {
         const unsubscribe = onAuthStateChanged(auth, async (user) => {
+            console.log('🔐 Auth state changed. User:', user?.email || 'Not logged in');
             setCurrentUser(user);
 
             if (user) {
                 // Fetch user data from Firestore
                 try {
+                    console.log('📡 Fetching user data for UID:', user.uid);
                     const userDoc = await getDoc(doc(db, 'users', user.uid));
                     if (userDoc.exists()) {
                         const data = userDoc.data() as User;
+                        console.log('✅ User data loaded:', data);
+                        console.log('🏢 Restaurant ID:', data.restaurantId);
                         setUserData(data);
                         setRestaurantId(data.restaurantId);
+                    } else {
+                        console.error('❌ User document not found in Firestore!');
                     }
                 } catch (error) {
-                    console.error('Error fetching user data:', error);
+                    console.error('❌ Error fetching user data:', error);
                 }
             } else {
+                console.log('👤 No user logged in');
                 setUserData(null);
                 setRestaurantId(null);
             }

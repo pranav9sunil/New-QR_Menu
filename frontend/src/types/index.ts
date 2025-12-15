@@ -41,6 +41,14 @@ export interface Table {
         time: string;
     };
     qrCodeUrl?: string;
+    layoutId?: string;
+    createdAt: Date;
+}
+
+export interface Layout {
+    id: string;
+    restaurantId: string;
+    name: string;
     createdAt: Date;
 }
 
@@ -129,5 +137,7 @@ export interface TableSession {
     createdAt: Date;
     customers?: SessionCustomer[];
     totalAmount?: number;
+    tipAmount?: number;
+    tipPercentage?: number;
     closedAt?: Date;
 }

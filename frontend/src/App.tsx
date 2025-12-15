@@ -15,6 +15,7 @@ import BarPage from './pages/admin/BarPage';
 import AccountsPage from './pages/admin/AccountsPage';
 import PrinterPage from './pages/admin/PrinterPage';
 import LiveBillsPage from './pages/admin/LiveBillsPage';
+import TPVPage from './pages/admin/TPVPage';
 
 function App() {
   return (
@@ -43,6 +44,7 @@ function App() {
             <Route path="kitchen" element={<KitchenPage />} />
             <Route path="bar" element={<BarPage />} />
             <Route path="live-bills" element={<LiveBillsPage />} />
+            <Route path="tpv" element={<TPVPage />} />
             <Route path="accounts" element={<AccountsPage />} />
             <Route path="printers" element={<PrinterPage />} />
             <Route path="bills" element={<PastBillsPage />} />

@@ -5,15 +5,12 @@ import {
     collection,
     query,
     where,
-    onSnapshot,
-    updateDoc,
-    doc
+    onSnapshot
 } from 'firebase/firestore';
 import type { Order } from '@/types';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { Button } from '@/components/ui/button';
-import { CheckCircle2, Clock, ChefHat } from 'lucide-react';
+import { Clock, ChefHat } from 'lucide-react';
 
 interface KitchenOrder extends Order {
     sessionStatus?: string;
@@ -51,7 +48,7 @@ export default function KitchenPage() {
             const ordersQuery = query(
                 ordersRef,
                 where('restaurantId', '==', restaurantId),
-                where('status', 'in', ['pending', 'preparing', 'ready'])
+                where('status', '==', 'pending')
             );
 
             const unsubscribeOrders = onSnapshot(ordersQuery, (orderSnapshot) => {
@@ -60,7 +57,19 @@ export default function KitchenPage() {
                     const data = doc.data() as Order;
                     // Only include orders from active sessions
                     if (activeSessionIds.has(data.sessionId || '')) {
-                        loadedOrders.push({ ...data, id: doc.id });
+                        // Filter items: Exclude drink items
+                        const foodItems = data.items.filter(item =>
+                            item.category?.toLowerCase() !== 'drinks' &&
+                            item.category?.toLowerCase() !== 'drink'
+                        );
+
+                        if (foodItems.length > 0) {
+                            loadedOrders.push({
+                                ...data,
+                                id: doc.id,
+                                items: foodItems
+                            });
+                        }
                     }
                 });
 
@@ -81,15 +90,7 @@ export default function KitchenPage() {
         return () => unsubscribeSessions();
     }, [restaurantId]);
 
-    const updateOrderStatus = async (orderId: string, newStatus: 'preparing' | 'ready' | 'completed') => {
-        try {
-            await updateDoc(doc(db, 'orders', orderId), {
-                status: newStatus
-            });
-        } catch (error) {
-            console.error('Error updating order status:', error);
-        }
-    };
+
 
     // Group orders by table
     const ordersByTable: Record<string, KitchenOrder[]> = {};
@@ -149,15 +150,6 @@ export default function KitchenPage() {
                                                     .toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
                                                 }
                                             </div>
-                                            <Badge
-                                                className={`
-                                                    ${order.status === 'pending' ? 'bg-yellow-100 text-yellow-800 hover:bg-yellow-100' : ''}
-                                                    ${order.status === 'preparing' ? 'bg-blue-100 text-blue-800 hover:bg-blue-100' : ''}
-                                                    ${order.status === 'ready' ? 'bg-green-100 text-green-800 hover:bg-green-100' : ''}
-                                                `}
-                                            >
-                                                {order.status.toUpperCase()}
-                                            </Badge>
                                         </div>
 
                                         <div className="space-y-1 mb-3">
@@ -168,37 +160,7 @@ export default function KitchenPage() {
                                             ))}
                                         </div>
 
-                                        <div className="flex gap-2 mt-2">
-                                            {order.status === 'pending' && (
-                                                <Button
-                                                    size="sm"
-                                                    className="w-full bg-blue-600 hover:bg-blue-700"
-                                                    onClick={() => updateOrderStatus(order.id, 'preparing')}
-                                                >
-                                                    Start Preparing
-                                                </Button>
-                                            )}
-                                            {order.status === 'preparing' && (
-                                                <Button
-                                                    size="sm"
-                                                    className="w-full bg-green-600 hover:bg-green-700"
-                                                    onClick={() => updateOrderStatus(order.id, 'ready')}
-                                                >
-                                                    Mark Ready
-                                                </Button>
-                                            )}
-                                            {order.status === 'ready' && (
-                                                <Button
-                                                    size="sm"
-                                                    variant="outline"
-                                                    className="w-full text-green-600 border-green-200 hover:bg-green-50"
-                                                    onClick={() => updateOrderStatus(order.id, 'completed')}
-                                                >
-                                                    <CheckCircle2 className="h-4 w-4 mr-2" />
-                                                    Complete
-                                                </Button>
-                                            )}
-                                        </div>
+
                                     </div>
                                 ))}
                             </CardContent>
