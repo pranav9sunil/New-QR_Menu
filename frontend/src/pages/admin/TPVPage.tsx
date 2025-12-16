@@ -261,10 +261,10 @@ export default function TPVPage() {
                     name: item.name,
                     price: item.price,
                     quantity: item.quantity,
-                    category: item.category,
+                    category: item.category || 'default',
                     selectedCustomizations: item.selectedCustomizations ?
                         Object.values(item.selectedCustomizations).flat().map(opt => ({ name: opt.name, price: opt.price })) : [],
-                    notes: item.notes
+                    notes: item.notes || ''
                 })),
                 status: 'pending',
                 subtotal,
