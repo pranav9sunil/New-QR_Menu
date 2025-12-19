@@ -10,6 +10,8 @@ import {
     updateDoc,
     deleteDoc,
     doc as firestoreDoc,
+    setDoc,
+    getDoc,
 } from 'firebase/firestore';
 import type { MenuItem, CustomizationGroup } from '@/types';
 import { Button } from '@/components/ui/button';
@@ -20,23 +22,28 @@ import {
     Dialog,
     DialogContent,
     DialogDescription,
-    DialogFooter,
     DialogHeader,
     DialogTitle,
 } from '@/components/ui/dialog';
-import { Plus, Edit2, Trash2, X } from 'lucide-react';
+import { Plus, Edit2, Trash2, Settings2, X } from 'lucide-react';
+import MenuStructureDialog from '@/components/admin/MenuStructureDialog';
 
 export default function MenuManagementPage() {
     const { restaurantId } = useAuth();
     const [menuItems, setMenuItems] = useState<MenuItem[]>([]);
+    const [categoryOrder, setCategoryOrder] = useState<string[]>([]);
+    const [subcategoryOrder, setSubcategoryOrder] = useState<Record<string, string[]>>({});
     const [loading, setLoading] = useState(true);
     const [dialogOpen, setDialogOpen] = useState(false);
     const [editingItem, setEditingItem] = useState<MenuItem | null>(null);
+    const [structureDialogOpen, setStructureDialogOpen] = useState(false);
+
     const [formData, setFormData] = useState({
         name: '',
         description: '',
         price: '',
         category: '',
+        subcategory: '',
         imageUrl: '',
         dietary: [] as string[],
         spiceLevel: '0',
@@ -47,14 +54,15 @@ export default function MenuManagementPage() {
 
     useEffect(() => {
         if (restaurantId) {
-            loadMenuItems();
+            loadData();
         }
     }, [restaurantId]);
 
-    const loadMenuItems = async () => {
+    const loadData = async () => {
         if (!restaurantId) return;
 
         try {
+            // Load Menu Items
             const menuRef = collection(db, 'menu_items');
             const q = query(menuRef, where('restaurantId', '==', restaurantId));
             const querySnapshot = await getDocs(q);
@@ -64,9 +72,30 @@ export default function MenuManagementPage() {
                 items.push({ id: doc.id, ...doc.data() } as MenuItem);
             });
 
+            // Sort items by order if available
+            items.sort((a, b) => (a.order || 0) - (b.order || 0));
             setMenuItems(items);
+
+            // Load Category and Subcategory Order
+            const restaurantRef = firestoreDoc(db, 'restaurants', restaurantId);
+            const restaurantSnap = await getDoc(restaurantRef);
+
+            if (restaurantSnap.exists()) {
+                const data = restaurantSnap.data();
+                if (data.categoryOrder) {
+                    setCategoryOrder(data.categoryOrder);
+                }
+                if (data.subcategoryOrder) {
+                    setSubcategoryOrder(data.subcategoryOrder);
+                }
+            } else {
+                // Initial category order from items
+                const cats = Array.from(new Set(items.map(i => i.category))).sort();
+                setCategoryOrder(cats);
+            }
+
         } catch (error) {
-            console.error('Error loading menu items:', error);
+            console.error('Error loading data:', error);
         } finally {
             setLoading(false);
         }
@@ -83,6 +112,7 @@ export default function MenuManagementPage() {
                 description: formData.description,
                 price: parseFloat(formData.price),
                 category: formData.category,
+                subcategory: formData.subcategory || null, // Optional
                 imageUrl: formData.imageUrl,
                 dietary: formData.dietary,
                 spiceLevel: parseInt(formData.spiceLevel),
@@ -91,15 +121,47 @@ export default function MenuManagementPage() {
                 customizationOptions: formData.customizationOptions,
                 isAvailable: true,
                 createdAt: new Date(),
+                order: menuItems.length, // Append to end
             };
 
             if (editingItem) {
                 await updateDoc(firestoreDoc(db, 'menu_items', editingItem.id), itemData);
             } else {
                 await addDoc(collection(db, 'menu_items'), itemData);
+
+                // Add category to order if new
+                let newCategoryOrder = categoryOrder;
+                let newSubcategoryOrder = subcategoryOrder;
+                let dataChanged = false;
+
+                if (!categoryOrder.includes(formData.category)) {
+                    newCategoryOrder = [...categoryOrder, formData.category];
+                    setCategoryOrder(newCategoryOrder);
+                    dataChanged = true;
+                }
+
+                // Add subcategory to order if new and present
+                if (formData.subcategory) {
+                    const currentSubs = subcategoryOrder[formData.category] || [];
+                    if (!currentSubs.includes(formData.subcategory)) {
+                        newSubcategoryOrder = {
+                            ...subcategoryOrder,
+                            [formData.category]: [...currentSubs, formData.subcategory]
+                        };
+                        setSubcategoryOrder(newSubcategoryOrder);
+                        dataChanged = true;
+                    }
+                }
+
+                if (dataChanged) {
+                    await setDoc(firestoreDoc(db, 'restaurants', restaurantId), {
+                        categoryOrder: newCategoryOrder,
+                        subcategoryOrder: newSubcategoryOrder
+                    }, { merge: true });
+                }
             }
 
-            await loadMenuItems();
+            await loadData();
             resetForm();
         } catch (error) {
             console.error('Error saving menu item:', error);
@@ -123,6 +185,7 @@ export default function MenuManagementPage() {
             description: '',
             price: '',
             category: '',
+            subcategory: '',
             imageUrl: '',
             dietary: [],
             spiceLevel: '0',
@@ -234,6 +297,7 @@ export default function MenuManagementPage() {
             description: item.description,
             price: item.price.toString(),
             category: item.category,
+            subcategory: item.subcategory || '',
             imageUrl: item.imageUrl || '',
             dietary: item.dietary || [],
             spiceLevel: (item.spiceLevel || 0).toString(),
@@ -244,7 +308,9 @@ export default function MenuManagementPage() {
         setDialogOpen(true);
     };
 
-    const categories = Array.from(new Set(menuItems.map((item) => item.category)));
+    // Ensure all categories from items are in categoryOrder
+    const itemCategories = Array.from(new Set(menuItems.map((item) => item.category)));
+    const categories = Array.from(new Set([...categoryOrder, ...itemCategories]));
 
     if (loading) {
         return (
@@ -258,10 +324,16 @@ export default function MenuManagementPage() {
         <div className="space-y-6">
             <div className="flex items-center justify-between">
                 <h1 className="text-3xl font-bold">Menu Management</h1>
-                <Button onClick={() => setDialogOpen(true)}>
-                    <Plus className="h-4 w-4 mr-2" />
-                    Add Menu Item
-                </Button>
+                <div className="flex gap-2">
+                    <Button variant="outline" onClick={() => setStructureDialogOpen(true)}>
+                        <Settings2 className="h-4 w-4 mr-2" />
+                        Edit Structure
+                    </Button>
+                    <Button onClick={() => setDialogOpen(true)}>
+                        <Plus className="h-4 w-4 mr-2" />
+                        Add Menu Item
+                    </Button>
+                </div>
             </div>
 
             {menuItems.length === 0 ? (
@@ -272,87 +344,75 @@ export default function MenuManagementPage() {
                 </Card>
             ) : (
                 <div className="space-y-6">
-                    {categories.length > 0 ? (
-                        categories.map((category) => (
-                            <div key={category}>
-                                <h2 className="text-2xl font-semibold mb-4">{category}</h2>
-                                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                                    {menuItems
-                                        .filter((item) => item.category === category)
-                                        .map((item) => (
-                                            <Card key={item.id} className="hover:shadow-lg transition-shadow">
-                                                <CardHeader className="pb-3">
-                                                    <div className="flex items-start justify-between">
-                                                        <CardTitle className="text-lg">{item.name}</CardTitle>
-                                                        <div className="flex gap-1">
-                                                            <Button
-                                                                variant="ghost"
-                                                                size="icon"
-                                                                className="h-8 w-8"
-                                                                onClick={() => startEdit(item)}
-                                                            >
-                                                                <Edit2 className="h-4 w-4" />
-                                                            </Button>
-                                                            <Button
-                                                                variant="ghost"
-                                                                size="icon"
-                                                                className="h-8 w-8 text-destructive"
-                                                                onClick={() => deleteMenuItem(item.id)}
-                                                            >
-                                                                <Trash2 className="h-4 w-4" />
-                                                            </Button>
-                                                        </div>
+                    {categories.map((category) => (
+                        <div key={category} className="bg-gray-50/50 p-4 rounded-lg border">
+                            <h2 className="text-2xl font-semibold mb-4">{category}</h2>
+                            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                                {(() => {
+                                    const items = menuItems.filter((item) => item.category === category);
+                                    // Group by subcategory
+                                    const grouped: Record<string, MenuItem[]> = { 'Other': [] };
+                                    const subcats = subcategoryOrder[category] || [];
+
+                                    // Initialize known subcategories in order
+                                    subcats.forEach(sub => grouped[sub] = []);
+
+                                    items.forEach(item => {
+                                        if (item.subcategory && (subcats.includes(item.subcategory) || grouped[item.subcategory])) {
+                                            if (!grouped[item.subcategory]) grouped[item.subcategory] = [];
+                                            grouped[item.subcategory].push(item);
+                                        } else {
+                                            grouped['Other'].push(item);
+                                        }
+                                    });
+
+                                    // Keys to display: Subcategories first, then Other (if any)
+                                    const displayKeys = [...subcats, 'Other'].filter(k => k === 'Other' ? grouped['Other'].length > 0 : (grouped[k] && grouped[k].length > 0));
+
+                                    // If no subcategories at all, just show flat list logic (by handling 'Other' as implicit root)
+                                    if (subcats.length === 0) {
+                                        return items.map(item => (
+                                            <MenuItemCard key={item.id} item={item} onEdit={startEdit} onDelete={deleteMenuItem} />
+                                        ));
+                                    }
+
+                                    return (
+                                        <div className="col-span-1 md:col-span-2 lg:col-span-3 grid grid-cols-1 gap-6">
+                                            {displayKeys.map(key => (
+                                                <div key={key} className="space-y-3">
+                                                    {key !== 'Other' && (
+                                                        <h3 className="text-lg font-medium text-gray-600 border-b pb-1">{key}</h3>
+                                                    )}
+                                                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                                                        {grouped[key].map(item => (
+                                                            <MenuItemCard key={item.id} item={item} onEdit={startEdit} onDelete={deleteMenuItem} />
+                                                        ))}
                                                     </div>
-                                                </CardHeader>
-                                                <CardContent>
-                                                    <p className="text-sm text-muted-foreground mb-3">
-                                                        {item.description}
-                                                    </p>
-                                                    <p className="text-lg font-bold text-primary">
-                                                        €{item.price.toFixed(2)}
-                                                    </p>
-                                                </CardContent>
-                                            </Card>
-                                        ))}
-                                </div>
-                            </div>
-                        ))
-                    ) : (
-                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                            {menuItems.map((item) => (
-                                <Card key={item.id} className="hover:shadow-lg transition-shadow">
-                                    <CardHeader className="pb-3">
-                                        <div className="flex items-start justify-between">
-                                            <CardTitle className="text-lg">{item.name}</CardTitle>
-                                            <div className="flex gap-1">
-                                                <Button
-                                                    variant="ghost"
-                                                    size="icon"
-                                                    className="h-8 w-8"
-                                                    onClick={() => startEdit(item)}
-                                                >
-                                                    <Edit2 className="h-4 w-4" />
-                                                </Button>
-                                                <Button
-                                                    variant="ghost"
-                                                    size="icon"
-                                                    className="h-8 w-8 text-destructive"
-                                                    onClick={() => deleteMenuItem(item.id)}
-                                                >
-                                                    <Trash2 className="h-4 w-4" />
-                                                </Button>
-                                            </div>
+                                                </div>
+                                            ))}
                                         </div>
-                                    </CardHeader>
-                                    <CardContent>
-                                        <p className="text-sm text-muted-foreground mb-3">{item.description}</p>
-                                        <p className="text-lg font-bold text-primary">€{item.price.toFixed(2)}</p>
-                                    </CardContent>
-                                </Card>
-                            ))}
+                                    );
+                                })()}
+                            </div>
                         </div>
-                    )}
+                    ))}
                 </div>
+            )}
+
+            {restaurantId && (
+                <MenuStructureDialog
+                    open={structureDialogOpen}
+                    onOpenChange={(open) => {
+                        setStructureDialogOpen(open);
+                        if (!open) {
+                            loadData();
+                        }
+                    }}
+                    restaurantId={restaurantId}
+                    initialMenuItems={menuItems}
+                    initialCategoryOrder={categories}
+                    initialSubcategoryOrder={subcategoryOrder}
+                />
             )}
 
             {/* Add/Edit Dialog */}
@@ -399,15 +459,34 @@ export default function MenuManagementPage() {
                             />
                         </div>
 
-                        <div className="space-y-2">
-                            <Label htmlFor="category">Category</Label>
-                            <Input
-                                id="category"
-                                value={formData.category}
-                                onChange={(e) => setFormData({ ...formData, category: e.target.value })}
-                                required
-                                placeholder="e.g., Appetizers, Entrees, Desserts"
-                            />
+                        <div className="grid grid-cols-2 gap-4">
+                            <div className="space-y-2">
+                                <Label htmlFor="category">Category</Label>
+                                <Input
+                                    id="category"
+                                    value={formData.category}
+                                    onChange={(e) => setFormData({ ...formData, category: e.target.value })}
+                                    required
+                                    placeholder="e.g., Appetizers"
+                                    list="categories-list"
+                                />
+                                <datalist id="categories-list">
+                                    {categoryOrder.map(c => <option key={c} value={c} />)}
+                                </datalist>
+                            </div>
+                            <div className="space-y-2">
+                                <Label htmlFor="subcategory">Subcategory (Optional)</Label>
+                                <Input
+                                    id="subcategory"
+                                    value={formData.subcategory}
+                                    onChange={(e) => setFormData({ ...formData, subcategory: e.target.value })}
+                                    placeholder="e.g., Beers"
+                                    list="subcategories-list"
+                                />
+                                <datalist id="subcategories-list">
+                                    {(subcategoryOrder[formData.category] || []).map(s => <option key={s} value={s} />)}
+                                </datalist>
+                            </div>
                         </div>
 
                         <div className="space-y-2">
@@ -589,15 +668,55 @@ export default function MenuManagementPage() {
                             ))}
                         </div>
 
-                        <DialogFooter>
+                        <div className="flex justify-end gap-2 pt-4">
                             <Button type="button" variant="outline" onClick={resetForm}>
                                 Cancel
                             </Button>
-                            <Button type="submit">{editingItem ? 'Update' : 'Add'} Item</Button>
-                        </DialogFooter>
+                            <Button type="submit">
+                                {editingItem ? 'Update Item' : 'Add Item'}
+                            </Button>
+                        </div>
                     </form>
                 </DialogContent>
             </Dialog>
         </div>
+    );
+}
+
+function MenuItemCard({ item, onEdit, onDelete }: { item: MenuItem, onEdit: (i: MenuItem) => void, onDelete: (id: string) => void }) {
+    return (
+        <Card className="hover:shadow-lg transition-shadow h-full">
+            <CardHeader className="pb-3">
+                <div className="flex items-start justify-between">
+                    <CardTitle className="text-lg">{item.name}</CardTitle>
+                    <div className="flex gap-1">
+                        <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-8 w-8"
+                            onClick={() => onEdit(item)}
+                        >
+                            <Edit2 className="h-4 w-4" />
+                        </Button>
+                        <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-8 w-8 text-destructive"
+                            onClick={() => onDelete(item.id)}
+                        >
+                            <Trash2 className="h-4 w-4" />
+                        </Button>
+                    </div>
+                </div>
+            </CardHeader>
+            <CardContent>
+                <p className="text-sm text-muted-foreground mb-3 line-clamp-2">
+                    {item.description}
+                </p>
+                <p className="text-lg font-bold text-primary">
+                    €{item.price.toFixed(2)}
+                </p>
+            </CardContent>
+        </Card>
     );
 }

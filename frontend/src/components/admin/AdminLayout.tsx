@@ -15,10 +15,131 @@ import {
     Wine,
     Printer,
     Monitor,
+    GripVertical,
 } from 'lucide-react';
+import {
+    DndContext,
+    closestCenter,
+    KeyboardSensor,
+    PointerSensor,
+    useSensor,
+    useSensors,
+    type DragEndEvent,
+} from '@dnd-kit/core';
+import {
+    arrayMove,
+    SortableContext,
+    sortableKeyboardCoordinates,
+    verticalListSortingStrategy,
+    useSortable,
+} from '@dnd-kit/sortable';
+import { CSS } from '@dnd-kit/utilities';
 
 import SettingsModal from './SettingsModal';
 import { Sheet, SheetContent, SheetTrigger, SheetHeader, SheetTitle } from '@/components/ui/sheet';
+
+const DEFAULT_MENU_ITEMS = [
+    {
+        label: 'Table Layout',
+        icon: LayoutGrid,
+        path: '/admin/layout',
+        id: 'layout',
+    },
+    {
+        label: 'Live Kitchen',
+        icon: ChefHat,
+        path: '/admin/kitchen',
+        id: 'kitchen',
+    },
+    {
+        label: 'Live Bar',
+        icon: Wine,
+        path: '/admin/bar',
+        id: 'bar',
+    },
+    {
+        label: 'Live Bills',
+        icon: Receipt,
+        path: '/admin/live-bills',
+        id: 'live-bills',
+    },
+    {
+        label: 'TPV (Manual Order)',
+        icon: Monitor,
+        path: '/admin/tpv',
+        id: 'tpv',
+    },
+    {
+        label: 'Printers',
+        icon: Printer,
+        path: '/admin/printers',
+        id: 'printers',
+    },
+    {
+        label: 'Menu Management',
+        icon: MenuSquare,
+        path: '/admin/menu',
+        id: 'menu',
+    },
+    {
+        label: 'Accounts',
+        icon: BarChart3,
+        path: '/admin/accounts',
+        id: 'accounts',
+    },
+    {
+        label: 'Past Bills',
+        icon: Receipt,
+        path: '/admin/bills',
+        id: 'bills',
+    },
+    {
+        label: 'QR Codes',
+        icon: QrCode,
+        path: '/admin/qr-codes',
+        id: 'qr-codes',
+    },
+];
+
+function SortableSidebarItem({ item, onClick }: { item: any, onClick?: () => void }) {
+    const {
+        attributes,
+        listeners,
+        setNodeRef,
+        transform,
+        transition,
+        isDragging,
+    } = useSortable({ id: item.id });
+
+    const style = {
+        transform: CSS.Transform.toString(transform),
+        transition,
+        zIndex: isDragging ? 1 : 0,
+        position: 'relative' as 'relative',
+    };
+
+    const Icon = item.icon;
+
+    return (
+        <div ref={setNodeRef} style={style} className="group relative flex items-center">
+            <Link
+                to={item.path}
+                onClick={onClick}
+                className="flex-1 flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium hover:bg-accent hover:text-accent-foreground transition-colors"
+            >
+                <Icon className="h-4 w-4" />
+                {item.label}
+            </Link>
+            <div
+                {...attributes}
+                {...listeners}
+                className="absolute right-2 p-1 cursor-grab opacity-0 group-hover:opacity-100 transition-opacity text-muted-foreground hover:text-foreground"
+            >
+                <GripVertical className="h-4 w-4" />
+            </div>
+        </div>
+    );
+}
 
 export default function AdminLayout() {
     const [settingsOpen, setSettingsOpen] = useState(false);
@@ -26,63 +147,56 @@ export default function AdminLayout() {
     const { signOut, userData } = useAuth();
     const navigate = useNavigate();
 
+    const [sidebarItems, setSidebarItems] = useState(() => {
+        const savedOrder = localStorage.getItem('admin_sidebar_order');
+        if (savedOrder) {
+            try {
+                const orderIds = JSON.parse(savedOrder);
+                const orderedItems = orderIds
+                    .map((id: string) => DEFAULT_MENU_ITEMS.find(item => item.id === id))
+                    .filter(Boolean);
+
+                // Add any new items that weren't in the saved order
+                const newItems = DEFAULT_MENU_ITEMS.filter(item => !orderIds.includes(item.id));
+                return [...orderedItems, ...newItems];
+            } catch (e) {
+                console.error('Failed to parse sidebar order', e);
+                return DEFAULT_MENU_ITEMS;
+            }
+        }
+        return DEFAULT_MENU_ITEMS;
+    });
+
+    const sensors = useSensors(
+        useSensor(PointerSensor, {
+            activationConstraint: {
+                distance: 8,
+            },
+        }),
+        useSensor(KeyboardSensor, {
+            coordinateGetter: sortableKeyboardCoordinates,
+        })
+    );
+
+    const handleDragEnd = (event: DragEndEvent) => {
+        const { active, over } = event;
+
+        if (active.id !== over?.id) {
+            setSidebarItems((items) => {
+                const oldIndex = items.findIndex((item) => item.id === active.id);
+                const newIndex = items.findIndex((item) => item.id === over?.id);
+                const newItems = arrayMove(items, oldIndex, newIndex);
+
+                localStorage.setItem('admin_sidebar_order', JSON.stringify(newItems.map(i => i.id)));
+                return newItems;
+            });
+        }
+    };
+
     const handleSignOut = async () => {
         await signOut();
         navigate('/login');
     };
-
-    const menuItems = [
-        {
-            label: 'Table Layout',
-            icon: LayoutGrid,
-            path: '/admin/layout',
-        },
-        {
-            label: 'Live Kitchen',
-            icon: ChefHat,
-            path: '/admin/kitchen',
-        },
-        {
-            label: 'Live Bar',
-            icon: Wine,
-            path: '/admin/bar',
-        },
-        {
-            label: 'Live Bills',
-            icon: Receipt,
-            path: '/admin/live-bills',
-        },
-        {
-            label: 'TPV (Manual Order)',
-            icon: Monitor,
-            path: '/admin/tpv',
-        },
-        {
-            label: 'Printers',
-            icon: Printer,
-            path: '/admin/printers',
-        },
-        {
-            label: 'Menu Management',
-            icon: MenuSquare,
-            path: '/admin/menu',
-        },
-        {
-            label: 'Accounts',
-            icon: BarChart3,
-            path: '/admin/accounts',
-        },
-        {
-            label: 'Past Bills',
-            icon: Receipt,
-            path: '/admin/bills',
-        },
-        {
-            label: 'QR Codes',
-            icon: QrCode,
-            path: '/admin/qr-codes',
-        },
-    ];
 
     const SidebarContent = () => (
         <div className="h-full flex flex-col">
@@ -92,21 +206,25 @@ export default function AdminLayout() {
                 <p className="text-xs text-muted-foreground capitalize">{userData?.role}</p>
             </div>
 
-            <nav className="space-y-2 flex-1 overflow-y-auto">
-                {menuItems.map((item) => {
-                    const Icon = item.icon;
-                    return (
-                        <Link
-                            key={item.path}
-                            to={item.path}
-                            onClick={() => setMobileOpen(false)}
-                            className="flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium hover:bg-accent hover:text-accent-foreground transition-colors"
-                        >
-                            <Icon className="h-4 w-4" />
-                            {item.label}
-                        </Link>
-                    );
-                })}
+            <nav className="space-y-1 flex-1 overflow-y-auto">
+                <DndContext
+                    sensors={sensors}
+                    collisionDetection={closestCenter}
+                    onDragEnd={handleDragEnd}
+                >
+                    <SortableContext
+                        items={sidebarItems.map(item => item.id)}
+                        strategy={verticalListSortingStrategy}
+                    >
+                        {sidebarItems.map((item) => (
+                            <SortableSidebarItem
+                                key={item.id}
+                                item={item}
+                                onClick={() => setMobileOpen(false)}
+                            />
+                        ))}
+                    </SortableContext>
+                </DndContext>
             </nav>
         </div>
     );

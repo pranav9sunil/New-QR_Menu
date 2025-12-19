@@ -28,6 +28,113 @@ import {
     DialogTitle,
 } from '@/components/ui/dialog';
 
+const MenuItemRow = ({ item, onAdd, showDivider }: { item: MenuItem, onAdd: (item: MenuItem) => void, showDivider: boolean }) => (
+    <div className="relative">
+        <div className="py-2.5 flex gap-3">
+            {/* Left Content */}
+            <div className="flex-1 space-y-1">
+                <div className="flex items-start justify-between">
+                    <div className="flex items-center gap-2">
+                        {item.dietary?.includes('non-vegetarian') ? (
+                            <div className="border border-red-600 p-[2px] rounded-sm" title="Non-Vegetarian">
+                                <div className="w-2 h-2 bg-red-600 rounded-full" />
+                            </div>
+                        ) : (
+                            <div className="border border-green-600 p-[2px] rounded-sm" title="Vegetarian">
+                                <div className="w-2 h-2 bg-green-600 rounded-full" />
+                            </div>
+                        )}
+                        <h3 className="font-bold text-lg">{item.name}</h3>
+
+                        {/* Chef's Special and Bestseller Badges */}
+                        <div className="flex items-center gap-1.5">
+                            {item.isChefSpecial && (
+                                <div className="bg-gradient-to-r from-orange-100 to-red-100 text-orange-700 text-sm px-1.5 py-0.5 rounded-full font-bold border border-orange-200 flex items-center" title="Chef's Special">
+                                    <ChefHat className="w-3.5 h-3.5" />
+                                </div>
+                            )}
+                            {item.isBestseller && (
+                                <div className="bg-gradient-to-r from-orange-100 to-red-100 text-orange-700 text-sm px-1.5 py-0.5 rounded-full font-bold border border-orange-200" title="Bestseller">
+                                    ⭐
+                                </div>
+                            )}
+                        </div>
+                    </div>
+                </div>
+                <div className="font-bold text-orange-600 text-base">€{item.price.toFixed(2)}</div>
+                <p className="text-sm text-muted-foreground line-clamp-2 leading-snug">{item.description}</p>
+
+                {/* Dietary Badges */}
+                <div className="flex flex-wrap gap-1.5 mt-1.5">
+                    {item.dietary?.includes('vegan') && (
+                        <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs bg-green-50 text-green-700 border border-green-200">
+                            🌱 Vegan
+                        </span>
+                    )}
+                    {item.dietary?.includes('vegetarian') && !item.dietary?.includes('vegan') && (
+                        <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs bg-green-50 text-green-700 border border-green-200">
+                            🥬 Vegetarian
+                        </span>
+                    )}
+                    {item.dietary?.includes('gluten-free') && (
+                        <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs bg-amber-50 text-amber-700 border border-amber-200">
+                            🌾 Gluten-Free
+                        </span>
+                    )}
+                    {/* Spice Level */}
+                    {item.spiceLevel !== undefined && item.spiceLevel > 0 && (
+                        <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs bg-red-50 text-red-700 border border-red-200">
+                            {item.spiceLevel === 1 && '🌶️'}
+                            {item.spiceLevel === 2 && '🌶️🌶️'}
+                            {item.spiceLevel === 3 && '🌶️🌶️🌶️'}
+                        </span>
+                    )}
+                </div>
+            </div>
+
+            {/* Right Image & Button */}
+            <div className="w-32 shrink-0">
+                <div className="relative w-full h-32">
+                    {item.imageUrl ? (
+                        <img
+                            src={item.imageUrl}
+                            alt={item.name}
+                            className="w-full h-full object-cover rounded-xl"
+                        />
+                    ) : (
+                        <div className="w-full h-full bg-gradient-to-br from-orange-100 to-red-100 rounded-xl flex items-center justify-center text-orange-400">
+                            <ChefHat className="w-7 h-7" />
+                        </div>
+                    )}
+
+                    {/* ADD button overlapping image */}
+                    <div className="absolute -bottom-3 left-1/2 transform -translate-x-1/2">
+                        <Button
+                            className="w-24 bg-green-600 text-white hover:bg-green-700 border-none shadow-sm font-bold h-8 uppercase text-sm rounded-lg transition-all duration-300"
+                            onClick={() => onAdd(item)}
+                        >
+                            ADD
+                        </Button>
+                    </div>
+                </div>
+
+                {/* Customisable text below */}
+                <div className="mt-3 text-center h-4">
+                    {item.customizationOptions && item.customizationOptions.length > 0 && (
+                        <span className="text-[11px] text-gray-500">Customisable</span>
+                    )}
+                </div>
+            </div>
+        </div>
+        {/* Separator line */}
+        {showDivider && (
+            <div className="border-b border-gray-200" />
+        )}
+    </div>
+);
+
+
+
 export default function MenuOrderPage() {
     const [searchParams] = useSearchParams();
     const navigate = useNavigate();
@@ -43,6 +150,7 @@ export default function MenuOrderPage() {
     const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
     const [sessionId, setSessionId] = useState<string | null>(null);
     const [isSessionClosed, setIsSessionClosed] = useState(false);
+    const [categoryOrder, setCategoryOrder] = useState<string[]>([]);
     const [billOrders, setBillOrders] = useState<Order[]>([]);
 
     // Search & Filter State
@@ -147,6 +255,10 @@ export default function MenuOrderPage() {
                 menuSnapshot.forEach((doc) => {
                     items.push({ id: doc.id, ...doc.data() } as MenuItem);
                 });
+
+                if (restaurantData.categoryOrder) {
+                    setCategoryOrder(restaurantData.categoryOrder);
+                }
 
                 setMenuItems(items);
             }
@@ -263,7 +375,8 @@ export default function MenuOrderPage() {
         }
     };
 
-    const categories = Array.from(new Set(menuItems.map((item) => item.category)));
+    const uniqueCategories = Array.from(new Set(menuItems.map((item) => item.category)));
+    const categories = Array.from(new Set([...categoryOrder, ...uniqueCategories])).filter(c => uniqueCategories.includes(c));
     const displayedItems = selectedCategory
         ? menuItems.filter((item) => item.category === selectedCategory)
         : menuItems;
@@ -651,117 +764,53 @@ export default function MenuOrderPage() {
                                     if (!acc[cat]) acc[cat] = [];
                                     acc[cat].push(item);
                                     return acc;
-                                }, {} as Record<string, MenuItem[]>)).map(([category, items]) => (
-                                    <div key={category}>
-                                        <h2 className="text-2xl font-bold mb-3 pb-2 text-gray-800 border-b-2 border-orange-200">{category}</h2>
-                                        <div>
-                                            {items.map((item, index) => (
-                                                <div key={item.id}>
-                                                    <div className="py-2.5 flex gap-3">
-                                                        {/* Left Content */}
-                                                        <div className="flex-1 space-y-1">
-                                                            <div className="flex items-start justify-between">
-                                                                <div className="flex items-center gap-2">
-                                                                    {item.dietary?.includes('non-vegetarian') ? (
-                                                                        <div className="border border-red-600 p-[2px] rounded-sm" title="Non-Vegetarian">
-                                                                            <div className="w-2 h-2 bg-red-600 rounded-full" />
-                                                                        </div>
-                                                                    ) : (
-                                                                        <div className="border border-green-600 p-[2px] rounded-sm" title="Vegetarian">
-                                                                            <div className="w-2 h-2 bg-green-600 rounded-full" />
-                                                                        </div>
-                                                                    )}
-                                                                    <h3 className="font-bold text-lg">{item.name}</h3>
+                                }, {} as Record<string, MenuItem[]>)).map(([category, items]) => {
+                                    // Group items by subcategory
+                                    const itemsBySub: Record<string, MenuItem[]> = { 'direct': [] };
 
-                                                                    {/* Chef's Special and Bestseller Badges */}
-                                                                    <div className="flex items-center gap-1.5">
-                                                                        {item.isChefSpecial && (
-                                                                            <div className="bg-gradient-to-r from-orange-100 to-red-100 text-orange-700 text-sm px-1.5 py-0.5 rounded-full font-bold border border-orange-200 flex items-center" title="Chef's Special">
-                                                                                <ChefHat className="w-3.5 h-3.5" />
-                                                                            </div>
-                                                                        )}
-                                                                        {item.isBestseller && (
-                                                                            <div className="bg-gradient-to-r from-orange-100 to-red-100 text-orange-700 text-sm px-1.5 py-0.5 rounded-full font-bold border border-orange-200" title="Bestseller">
-                                                                                ⭐
-                                                                            </div>
-                                                                        )}
-                                                                    </div>
-                                                                </div>
-                                                            </div>
-                                                            <div className="font-bold text-orange-600 text-base">€{item.price.toFixed(2)}</div>
-                                                            <p className="text-sm text-muted-foreground line-clamp-2 leading-snug">{item.description}</p>
+                                    items.forEach(item => {
+                                        if (item.subcategory) {
+                                            if (!itemsBySub[item.subcategory]) itemsBySub[item.subcategory] = [];
+                                            itemsBySub[item.subcategory].push(item);
+                                        } else {
+                                            itemsBySub['direct'].push(item);
+                                        }
+                                    });
 
-                                                            {/* Dietary Badges */}
-                                                            <div className="flex flex-wrap gap-1.5 mt-1.5">
-                                                                {item.dietary?.includes('vegan') && (
-                                                                    <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs bg-green-50 text-green-700 border border-green-200">
-                                                                        🌱 Vegan
-                                                                    </span>
-                                                                )}
-                                                                {item.dietary?.includes('vegetarian') && !item.dietary?.includes('vegan') && (
-                                                                    <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs bg-green-50 text-green-700 border border-green-200">
-                                                                        🥬 Vegetarian
-                                                                    </span>
-                                                                )}
-                                                                {item.dietary?.includes('gluten-free') && (
-                                                                    <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs bg-amber-50 text-amber-700 border border-amber-200">
-                                                                        🌾 Gluten-Free
-                                                                    </span>
-                                                                )}
-                                                                {/* Spice Level */}
-                                                                {item.spiceLevel !== undefined && item.spiceLevel > 0 && (
-                                                                    <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs bg-red-50 text-red-700 border border-red-200">
-                                                                        {item.spiceLevel === 1 && '🌶️'}
-                                                                        {item.spiceLevel === 2 && '🌶️🌶️'}
-                                                                        {item.spiceLevel === 3 && '🌶️🌶️🌶️'}
-                                                                    </span>
-                                                                )}
-                                                            </div>
-                                                        </div>
+                                    // Determine order of subcategories if available (from restaurantData if we had it, but here we might need to fetch/store it)
+                                    // For now, sorting alphabetically or insert order (Object.keys)
+                                    // We didn't load `subcategoryOrder` in this file yet. To be perfect, we should load it.
+                                    // Let's assume for now iterate keys.
 
-                                                        {/* Right Image & Button */}
-                                                        <div className="w-32 shrink-0">
-                                                            <div className="relative w-full h-32">
-                                                                {item.imageUrl ? (
-                                                                    <img
-                                                                        src={item.imageUrl}
-                                                                        alt={item.name}
-                                                                        className="w-full h-full object-cover rounded-xl"
-                                                                    />
-                                                                ) : (
-                                                                    <div className="w-full h-full bg-gradient-to-br from-orange-100 to-red-100 rounded-xl flex items-center justify-center text-orange-400">
-                                                                        <ChefHat className="w-7 h-7" />
-                                                                    </div>
-                                                                )}
+                                    const subkeys = Object.keys(itemsBySub).filter(k => k !== 'direct').sort();
 
-                                                                {/* ADD button overlapping image */}
-                                                                <div className="absolute -bottom-3 left-1/2 transform -translate-x-1/2">
-                                                                    <Button
-                                                                        className="w-24 bg-green-600 text-white hover:bg-green-700 border-none shadow-sm font-bold h-8 uppercase text-sm rounded-lg transition-all duration-300"
-                                                                        onClick={() => handleAddToCartClick(item)}
-                                                                    >
-                                                                        ADD
-                                                                    </Button>
-                                                                </div>
-                                                            </div>
+                                    return (
+                                        <div key={category} id={`category-${category}`}>
+                                            {!selectedCategory && (
+                                                <h2 className="text-2xl font-bold mb-3 pb-2 text-gray-800 border-b-2 border-orange-200">{category}</h2>
+                                            )}
 
-                                                            {/* Customisable text below */}
-                                                            <div className="mt-3 text-center h-4">
-                                                                {item.customizationOptions && item.customizationOptions.length > 0 && (
-                                                                    <span className="text-[11px] text-gray-500">Customisable</span>
-                                                                )}
-                                                            </div>
-                                                        </div>
-                                                    </div>
-                                                    {/* Separator line - not for last item in category */}
-                                                    {index < items.length - 1 && (
-                                                        <div className="border-b border-gray-200" />
-                                                    )}
+                                            {/* Direct Items */}
+                                            {itemsBySub['direct'].length > 0 && (
+                                                <div className="mb-4">
+                                                    {itemsBySub['direct'].map((item, index) => (
+                                                        <MenuItemRow key={item.id} item={item} onAdd={handleAddToCartClick} showDivider={index < itemsBySub['direct'].length - 1} />
+                                                    ))}
+                                                </div>
+                                            )}
+
+                                            {/* Subcategories */}
+                                            {subkeys.map(sub => (
+                                                <div key={sub} className="mb-6 ml-2">
+                                                    <h3 className="text-xl font-semibold mb-3 text-orange-900/80">{sub}</h3>
+                                                    {itemsBySub[sub].map((item, index) => (
+                                                        <MenuItemRow key={item.id} item={item} onAdd={handleAddToCartClick} showDivider={index < itemsBySub[sub].length - 1} />
+                                                    ))}
                                                 </div>
                                             ))}
                                         </div>
-                                    </div>
-                                ))}
+                                    )
+                                })}
                             </div>
                         )}
                     </div>

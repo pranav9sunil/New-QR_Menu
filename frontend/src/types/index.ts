@@ -10,6 +10,8 @@ export interface Restaurant {
     };
     isActive: boolean;
     layoutConfigured: boolean;
+    categoryOrder?: string[];
+    subcategoryOrder?: Record<string, string[]>;
     createdAt: Date;
     updatedAt: Date;
 }
@@ -76,6 +78,7 @@ export interface MenuItem {
     description: string;
     price: number;
     category: string;
+    subcategory?: string;
     imageUrl?: string;
     isAvailable: boolean;
     allergens?: string[];
@@ -84,6 +87,7 @@ export interface MenuItem {
     isChefSpecial?: boolean;
     isBestseller?: boolean;
     customizationOptions?: CustomizationGroup[];
+    order?: number;
     createdAt: Date;
 }
 
