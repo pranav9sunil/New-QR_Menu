@@ -233,7 +233,22 @@ export default function LiveBillsPage() {
         }
     };
 
-    const handleUpdateQuantity = async (order: Order, itemIndex: number, newQuantity: number) => {
+    // Handler to update quantity for a specific item in an order
+    const handleUpdateConsolidatedQuantity = async (orderId: string, itemName: string, itemPrice: number, customizations: string, delta: number) => {
+        if (!selectedSession) return;
+
+        // Find the order and item
+        const order = selectedSession.orders.find(o => o.id === orderId);
+        if (!order) return;
+
+        const itemIndex = order.items.findIndex(item => {
+            const itemCustomizations = item.selectedCustomizations?.map(c => c.name).sort().join(',') || '';
+            return item.name === itemName && item.price === itemPrice && itemCustomizations === customizations;
+        });
+
+        if (itemIndex === -1) return;
+
+        const newQuantity = order.items[itemIndex].quantity + delta;
         if (newQuantity < 1) return;
 
         try {
@@ -248,7 +263,7 @@ export default function LiveBillsPage() {
                 : discount;
             const total = subtotal + tax - discountAmount;
 
-            await updateDoc(doc(db, 'orders', order.id), {
+            await updateDoc(doc(db, 'orders', orderId), {
                 items: updatedItems,
                 subtotal,
                 tax,
@@ -259,14 +274,26 @@ export default function LiveBillsPage() {
         }
     };
 
-    const handleRemoveItem = async (order: Order, itemIndex: number) => {
+    // Handler to remove an item from an order
+    const handleRemoveConsolidatedItem = async (orderId: string, itemName: string, itemPrice: number, customizations: string) => {
+        if (!selectedSession) return;
         if (!confirm('Remove this item from the order?')) return;
+
+        const order = selectedSession.orders.find(o => o.id === orderId);
+        if (!order) return;
+
+        const itemIndex = order.items.findIndex(item => {
+            const itemCustomizations = item.selectedCustomizations?.map(c => c.name).sort().join(',') || '';
+            return item.name === itemName && item.price === itemPrice && itemCustomizations === customizations;
+        });
+
+        if (itemIndex === -1) return;
 
         try {
             const updatedItems = order.items.filter((_, index) => index !== itemIndex);
 
             if (updatedItems.length === 0) {
-                await deleteDoc(doc(db, 'orders', order.id));
+                await deleteDoc(doc(db, 'orders', orderId));
                 return;
             }
 
@@ -278,7 +305,7 @@ export default function LiveBillsPage() {
                 : discount;
             const total = subtotal + tax - discountAmount;
 
-            await updateDoc(doc(db, 'orders', order.id), {
+            await updateDoc(doc(db, 'orders', orderId), {
                 items: updatedItems,
                 subtotal,
                 tax,
@@ -402,7 +429,8 @@ export default function LiveBillsPage() {
         }
     };
 
-    const handlePrintBill = async () => {
+    // Print bill WITHOUT closing the order (intermediate print)
+    const handlePrintOnly = () => {
         if (!selectedSession) return;
 
         try {
@@ -412,6 +440,82 @@ export default function LiveBillsPage() {
 
             pdf.setFontSize(20);
             pdf.text('Bill', 105, yPos, { align: 'center' });
+            yPos += 15;
+
+            pdf.setFontSize(12);
+            pdf.text(`Table: ${selectedSession.tableName}`, 20, yPos);
+            yPos += 10;
+            pdf.text(`Date: ${new Date().toLocaleString()}`, 20, yPos);
+            yPos += 15;
+
+            pdf.setFontSize(10);
+            pdf.text('Item', 20, yPos);
+            pdf.text('Qty', 120, yPos);
+            pdf.text('Price', 150, yPos);
+            pdf.text('Total', 180, yPos);
+            yPos += 5;
+            pdf.line(20, yPos, 190, yPos);
+            yPos += 10;
+
+            for (const order of selectedSession.orders) {
+                for (const item of order.items) {
+                    pdf.text(item.name, 20, yPos);
+                    pdf.text(item.quantity.toString(), 120, yPos);
+                    pdf.text(`€${item.price.toFixed(2)}`, 150, yPos);
+                    pdf.text(`€${(item.price * item.quantity).toFixed(2)}`, 180, yPos);
+                    yPos += 7;
+                }
+            }
+
+            yPos += 5;
+            pdf.line(20, yPos, 190, yPos);
+            yPos += 10;
+
+            const firstOrder = selectedSession.orders[0];
+            const subtotal = selectedSession.orders.reduce((sum, order) => sum + order.subtotal, 0);
+            const tax = selectedSession.orders.reduce((sum, order) => sum + order.tax, 0);
+            const discount = firstOrder.discount || 0;
+            const discountAmount = firstOrder.discountType === 'percentage'
+                ? (subtotal + tax) * (discount / 100)
+                : discount;
+
+            pdf.text('Subtotal:', 140, yPos);
+            pdf.text(`€${subtotal.toFixed(2)}`, 180, yPos);
+            yPos += 7;
+            pdf.text('Tax (8%):', 140, yPos);
+            pdf.text(`€${tax.toFixed(2)}`, 180, yPos);
+            yPos += 7;
+
+            if (discount > 0) {
+                pdf.text(`Discount:`, 120, yPos);
+                pdf.text(`-€${discountAmount.toFixed(2)}`, 180, yPos);
+                yPos += 7;
+            }
+
+            yPos += 5;
+            pdf.setFontSize(14);
+            pdf.text(`Total:`, 120, yPos);
+            pdf.text(`€${selectedSession.totalAmount.toFixed(2)}`, 180, yPos);
+
+            // Download PDF (no order status changes)
+            pdf.save(`bill-${selectedSession.tableName}-${Date.now()}.pdf`);
+
+        } catch (error) {
+            console.error('Error printing bill:', error);
+        }
+    };
+
+    // Print FINAL bill and mark order as completed
+    const handlePrintBill = async () => {
+        if (!selectedSession) return;
+
+        try {
+            // Generate PDF
+            const pdf = new jsPDF();
+            let yPos = 20;
+
+            pdf.setFontSize(20);
+            pdf.text('FINAL BILL', 105, yPos, { align: 'center' });
             yPos += 15;
 
             pdf.setFontSize(12);
@@ -598,107 +702,151 @@ export default function LiveBillsPage() {
                                                     Discount
                                                 </Button>
                                                 <Button
+                                                    variant="outline"
+                                                    size="sm"
+                                                    onClick={handlePrintOnly}
+                                                    className="border-orange-200 hover:bg-orange-50"
+                                                >
+                                                    <Printer className="h-4 w-4 mr-2" />
+                                                    Print
+                                                </Button>
+                                                <Button
                                                     size="sm"
                                                     onClick={() => setPrintModalOpen(true)}
                                                     className="bg-gradient-to-r from-orange-500 to-red-500 hover:from-orange-600 hover:to-red-600 text-white"
                                                 >
                                                     <Printer className="h-4 w-4 mr-2" />
-                                                    Print Bill
+                                                    Bill
                                                 </Button>
                                             </div>
                                         </div>
                                     </CardHeader>
                                     <CardContent className="space-y-6">
-                                        {selectedSession.orders.map((order) => (
-                                            <div key={order.id} className="space-y-3">
-                                                <div className="flex justify-between items-center">
-                                                    <h3 className="font-semibold text-gray-700">
-                                                        Order #{order.id.slice(-6)}
-                                                    </h3>
-                                                    <span className={`text-xs px-2 py-1 rounded-full ${order.status === 'completed' ? 'bg-green-100 text-green-700' :
-                                                        order.status === 'preparing' ? 'bg-blue-100 text-blue-700' :
-                                                            order.status === 'ready' ? 'bg-purple-100 text-purple-700' :
-                                                                'bg-yellow-100 text-yellow-700'
-                                                        }`}>
-                                                        {order.status}
-                                                    </span>
-                                                </div>
+                                        {/* Consolidated Items View */}
+                                        {(() => {
+                                            // Consolidate all items from all orders
+                                            interface ConsolidatedItem {
+                                                name: string;
+                                                price: number;
+                                                quantity: number;
+                                                orderId: string;
+                                                originalItemIndex: number;
+                                                customizations?: string;
+                                            }
+                                            const consolidatedItems: ConsolidatedItem[] = [];
 
-                                                <div className="space-y-2">
-                                                    {order.items.map((item, index) => (
-                                                        <div key={index} className="flex justify-between items-center p-2 bg-gray-50 rounded">
-                                                            <div className="flex-1">
-                                                                <p className="font-medium">{item.name}</p>
-                                                                <p className="text-sm text-muted-foreground">
-                                                                    €{item.price.toFixed(2)} each
-                                                                </p>
-                                                            </div>
-                                                            <div className="flex items-center gap-3">
-                                                                <div className="flex items-center gap-2">
+                                            selectedSession.orders.forEach(order => {
+                                                order.items.forEach((item, itemIndex) => {
+                                                    const customizationsKey = item.selectedCustomizations?.map(c => c.name).sort().join(',') || '';
+                                                    const existingIndex = consolidatedItems.findIndex(
+                                                        ci => ci.name === item.name && ci.price === item.price && ci.customizations === customizationsKey
+                                                    );
+
+                                                    if (existingIndex >= 0) {
+                                                        consolidatedItems[existingIndex].quantity += item.quantity;
+                                                    } else {
+                                                        consolidatedItems.push({
+                                                            name: item.name,
+                                                            price: item.price,
+                                                            quantity: item.quantity,
+                                                            orderId: order.id,
+                                                            originalItemIndex: itemIndex,
+                                                            customizations: customizationsKey
+                                                        });
+                                                    }
+                                                });
+                                            });
+
+                                            // Calculate totals
+                                            const subtotal = consolidatedItems.reduce((sum, item) => sum + (item.price * item.quantity), 0);
+                                            const tax = subtotal * 0.08;
+                                            const firstOrder = selectedSession.orders[0];
+                                            const discount = firstOrder?.discount || 0;
+                                            const discountAmount = firstOrder?.discountType === 'percentage'
+                                                ? (subtotal + tax) * (discount / 100)
+                                                : discount;
+                                            const total = subtotal + tax - discountAmount;
+
+                                            return (
+                                                <>
+                                                    <div className="space-y-2">
+                                                        <h3 className="font-semibold text-gray-700">All Items</h3>
+                                                        {consolidatedItems.map((item, index) => (
+                                                            <div key={index} className="flex justify-between items-center p-2 bg-gray-50 rounded">
+                                                                <div className="flex-1">
+                                                                    <p className="font-medium">{item.name}</p>
+                                                                    <p className="text-sm text-muted-foreground">
+                                                                        €{item.price.toFixed(2)} each
+                                                                        {item.customizations && (
+                                                                            <span className="ml-1">(+{item.customizations})</span>
+                                                                        )}
+                                                                    </p>
+                                                                </div>
+                                                                <div className="flex items-center gap-3">
+                                                                    <div className="flex items-center gap-2">
+                                                                        <Button
+                                                                            variant="outline"
+                                                                            size="icon"
+                                                                            className="h-8 w-8"
+                                                                            onClick={() => handleUpdateConsolidatedQuantity(item.orderId, item.name, item.price, item.customizations || '', -1)}
+                                                                            disabled={item.quantity <= 1}
+                                                                        >
+                                                                            <Minus className="h-4 w-4" />
+                                                                        </Button>
+                                                                        <span className="w-8 text-center font-semibold">
+                                                                            {item.quantity}
+                                                                        </span>
+                                                                        <Button
+                                                                            variant="outline"
+                                                                            size="icon"
+                                                                            className="h-8 w-8"
+                                                                            onClick={() => handleUpdateConsolidatedQuantity(item.orderId, item.name, item.price, item.customizations || '', 1)}
+                                                                        >
+                                                                            <Plus className="h-4 w-4" />
+                                                                        </Button>
+                                                                    </div>
+                                                                    <p className="font-semibold text-orange-600 w-20 text-right">
+                                                                        €{(item.price * item.quantity).toFixed(2)}
+                                                                    </p>
                                                                     <Button
-                                                                        variant="outline"
+                                                                        variant="ghost"
                                                                         size="icon"
-                                                                        className="h-8 w-8"
-                                                                        onClick={() => handleUpdateQuantity(order, index, item.quantity - 1)}
-                                                                        disabled={item.quantity <= 1}
+                                                                        className="h-8 w-8 text-red-500 hover:text-red-700 hover:bg-red-50"
+                                                                        onClick={() => handleRemoveConsolidatedItem(item.orderId, item.name, item.price, item.customizations || '')}
                                                                     >
-                                                                        <Minus className="h-4 w-4" />
-                                                                    </Button>
-                                                                    <span className="w-8 text-center font-semibold">
-                                                                        {item.quantity}
-                                                                    </span>
-                                                                    <Button
-                                                                        variant="outline"
-                                                                        size="icon"
-                                                                        className="h-8 w-8"
-                                                                        onClick={() => handleUpdateQuantity(order, index, item.quantity + 1)}
-                                                                    >
-                                                                        <Plus className="h-4 w-4" />
+                                                                        <Trash2 className="h-4 w-4" />
                                                                     </Button>
                                                                 </div>
-                                                                <p className="font-semibold text-orange-600 w-20 text-right">
-                                                                    €{(item.price * item.quantity).toFixed(2)}
-                                                                </p>
-                                                                <Button
-                                                                    variant="ghost"
-                                                                    size="icon"
-                                                                    className="h-8 w-8 text-red-500 hover:text-red-700 hover:bg-red-50"
-                                                                    onClick={() => handleRemoveItem(order, index)}
-                                                                >
-                                                                    <Trash2 className="h-4 w-4" />
-                                                                </Button>
                                                             </div>
-                                                        </div>
-                                                    ))}
-                                                </div>
+                                                        ))}
+                                                    </div>
 
-                                                <div className="border-t pt-3 space-y-1 text-sm">
-                                                    <div className="flex justify-between">
-                                                        <span className="text-muted-foreground">Subtotal:</span>
-                                                        <span>€{order.subtotal.toFixed(2)}</span>
-                                                    </div>
-                                                    <div className="flex justify-between text-sm">
-                                                        <span>Tax (8%):</span>
-                                                        <span>€{order.tax.toFixed(2)}</span>
-                                                    </div>
-                                                    {order.discount && order.discount > 0 && (
-                                                        <div className="flex justify-between text-sm text-green-600">
-                                                            <span>
-                                                                Discount
-                                                                {order.discountType === 'percentage' && ` (${order.discount}%)`}:
-                                                            </span>
-                                                            <span>-€{(order.discountType === 'percentage'
-                                                                ? (order.subtotal + order.tax) * (order.discount / 100)
-                                                                : order.discount).toFixed(2)}</span>
+                                                    <div className="border-t pt-3 space-y-1 text-sm">
+                                                        <div className="flex justify-between">
+                                                            <span className="text-muted-foreground">Subtotal:</span>
+                                                            <span>€{subtotal.toFixed(2)}</span>
                                                         </div>
-                                                    )}
-                                                    <div className="flex justify-between font-bold text-lg pt-2 border-t">
-                                                        <span>Total:</span>
-                                                        <span className="text-orange-600">€{order.total.toFixed(2)}</span>
+                                                        <div className="flex justify-between text-sm">
+                                                            <span>Tax (8%):</span>
+                                                            <span>€{tax.toFixed(2)}</span>
+                                                        </div>
+                                                        {discount > 0 && (
+                                                            <div className="flex justify-between text-sm text-green-600">
+                                                                <span>
+                                                                    Discount
+                                                                    {firstOrder?.discountType === 'percentage' && ` (${discount}%)`}:
+                                                                </span>
+                                                                <span>-€{discountAmount.toFixed(2)}</span>
+                                                            </div>
+                                                        )}
+                                                        <div className="flex justify-between font-bold text-lg pt-2 border-t">
+                                                            <span>Total:</span>
+                                                            <span className="text-orange-600">€{total.toFixed(2)}</span>
+                                                        </div>
                                                     </div>
-                                                </div>
-                                            </div>
-                                        ))}
+                                                </>
+                                            );
+                                        })()}
                                     </CardContent>
                                 </Card>
                             ) : (

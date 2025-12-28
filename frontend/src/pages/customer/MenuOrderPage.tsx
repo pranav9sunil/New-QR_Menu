@@ -17,7 +17,7 @@ import type { MenuItem, CartItem, Order } from '@/types';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card, CardContent } from '@/components/ui/card';
-import { ChefHat, ShoppingCart, Plus, Minus, Trash2, Receipt, Download, Search, History, CheckCircle2, ChevronDown } from 'lucide-react';
+import { ChefHat, ShoppingCart, Plus, Minus, Trash2, Receipt, Download, Search, History, CheckCircle2, ChevronDown, ChevronRight, X } from 'lucide-react';
 import { jsPDF } from 'jspdf';
 import {
     Dialog,
@@ -28,110 +28,134 @@ import {
     DialogTitle,
 } from '@/components/ui/dialog';
 
-const MenuItemRow = ({ item, onAdd, showDivider }: { item: MenuItem, onAdd: (item: MenuItem) => void, showDivider: boolean }) => (
-    <div className="relative">
-        <div className="py-2.5 flex gap-3">
-            {/* Left Content */}
-            <div className="flex-1 space-y-1">
-                <div className="flex items-start justify-between">
-                    <div className="flex items-center gap-2">
-                        {item.dietary?.includes('non-vegetarian') ? (
-                            <div className="border border-red-600 p-[2px] rounded-sm" title="Non-Vegetarian">
-                                <div className="w-2 h-2 bg-red-600 rounded-full" />
+const MenuItemRow = ({ item, onAdd, showDivider }: { item: MenuItem, onAdd: (item: MenuItem) => void, showDivider: boolean }) => {
+    const [isExpanded, setIsExpanded] = useState(false);
+    const hasCustomization = item.customizationOptions && item.customizationOptions.length > 0;
+    const descriptionLimit = 80;
+    const isLongDescription = item.description?.length > descriptionLimit;
+
+    return (
+        <div className="relative">
+            <div className={`flex gap-3 ${hasCustomization ? 'pt-2.5 pb-3' : 'pt-1.5 pb-7'}`}>
+                {/* Left Content */}
+                <div className="flex-1 space-y-1">
+                    <div className="flex items-start justify-between">
+                        <div className="flex items-center gap-2">
+                            {item.dietary?.includes('non-vegetarian') ? (
+                                <div className="border border-red-600 p-[2px] rounded-sm" title="Non-Vegetarian">
+                                    <div className="w-2 h-2 bg-red-600 rounded-full" />
+                                </div>
+                            ) : (
+                                <div className="border border-green-600 p-[2px] rounded-sm" title="Vegetarian">
+                                    <div className="w-2 h-2 bg-green-600 rounded-full" />
+                                </div>
+                            )}
+                            <h3 className="font-bold text-lg">{item.name}</h3>
+
+                            {/* Chef's Special and Bestseller Badges */}
+                            <div className="flex items-center gap-1.5">
+                                {item.isChefSpecial && (
+                                    <div className="bg-gradient-to-r from-orange-100 to-red-100 text-orange-700 text-sm px-1.5 py-0.5 rounded-full font-bold border border-orange-200 flex items-center" title="Chef's Special">
+                                        <ChefHat className="w-3.5 h-3.5" />
+                                    </div>
+                                )}
+                                {item.isBestseller && (
+                                    <div className="bg-gradient-to-r from-orange-100 to-red-100 text-orange-700 text-sm px-1.5 py-0.5 rounded-full font-bold border border-orange-200" title="Bestseller">
+                                        ⭐
+                                    </div>
+                                )}
                             </div>
+                        </div>
+                    </div>
+                    <div className="font-bold text-orange-600 text-base">€{item.price.toFixed(2)}</div>
+                    <div className="text-sm text-muted-foreground leading-snug">
+                        {isExpanded || !isLongDescription ? (
+                            item.description
                         ) : (
-                            <div className="border border-green-600 p-[2px] rounded-sm" title="Vegetarian">
-                                <div className="w-2 h-2 bg-green-600 rounded-full" />
+                            <>
+                                {item.description.slice(0, descriptionLimit)}
+                                <button
+                                    onClick={(e) => {
+                                        e.stopPropagation();
+                                        setIsExpanded(true);
+                                    }}
+                                    className="ml-1 font-bold text-gray-600 hover:text-black transition-colors"
+                                >
+                                    ... more
+                                </button>
+                            </>
+                        )}
+                    </div>
+
+                    {/* Dietary Badges */}
+                    <div className="flex flex-wrap gap-1.5 mt-1.5">
+                        {item.dietary?.includes('vegan') && (
+                            <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs bg-green-50 text-green-700 border border-green-200">
+                                🌱 Vegan
+                            </span>
+                        )}
+                        {item.dietary?.includes('vegetarian') && !item.dietary?.includes('vegan') && (
+                            <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs bg-green-50 text-green-700 border border-green-200">
+                                🥬 Vegetarian
+                            </span>
+                        )}
+                        {item.dietary?.includes('gluten-free') && (
+                            <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs bg-amber-50 text-amber-700 border border-amber-200">
+                                🌾 Gluten-Free
+                            </span>
+                        )}
+                        {/* Spice Level */}
+                        {item.spiceLevel !== undefined && item.spiceLevel > 0 && (
+                            <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs bg-red-50 text-red-700 border border-red-200">
+                                {item.spiceLevel === 1 && '🌶️'}
+                                {item.spiceLevel === 2 && '🌶️🌶️'}
+                                {item.spiceLevel === 3 && '🌶️🌶️🌶️'}
+                            </span>
+                        )}
+                    </div>
+                </div>
+
+                {/* Right Image & Button */}
+                <div className="w-32 shrink-0">
+                    <div className="relative w-full h-32">
+                        {item.imageUrl ? (
+                            <img
+                                src={item.imageUrl}
+                                alt={item.name}
+                                className="w-full h-full object-cover rounded-xl"
+                            />
+                        ) : (
+                            <div className="w-full h-full bg-gradient-to-br from-orange-100 to-red-100 rounded-xl flex items-center justify-center text-orange-400">
+                                <ChefHat className="w-7 h-7" />
                             </div>
                         )}
-                        <h3 className="font-bold text-lg">{item.name}</h3>
 
-                        {/* Chef's Special and Bestseller Badges */}
-                        <div className="flex items-center gap-1.5">
-                            {item.isChefSpecial && (
-                                <div className="bg-gradient-to-r from-orange-100 to-red-100 text-orange-700 text-sm px-1.5 py-0.5 rounded-full font-bold border border-orange-200 flex items-center" title="Chef's Special">
-                                    <ChefHat className="w-3.5 h-3.5" />
-                                </div>
-                            )}
-                            {item.isBestseller && (
-                                <div className="bg-gradient-to-r from-orange-100 to-red-100 text-orange-700 text-sm px-1.5 py-0.5 rounded-full font-bold border border-orange-200" title="Bestseller">
-                                    ⭐
-                                </div>
-                            )}
+                        {/* ADD button overlapping image */}
+                        <div className="absolute -bottom-3 left-1/2 transform -translate-x-1/2">
+                            <Button
+                                className="w-24 bg-green-600 text-white hover:bg-green-700 border-none shadow-sm font-bold h-8 uppercase text-sm rounded-lg transition-all duration-300"
+                                onClick={() => onAdd(item)}
+                            >
+                                ADD
+                            </Button>
                         </div>
                     </div>
-                </div>
-                <div className="font-bold text-orange-600 text-base">€{item.price.toFixed(2)}</div>
-                <p className="text-sm text-muted-foreground line-clamp-2 leading-snug">{item.description}</p>
 
-                {/* Dietary Badges */}
-                <div className="flex flex-wrap gap-1.5 mt-1.5">
-                    {item.dietary?.includes('vegan') && (
-                        <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs bg-green-50 text-green-700 border border-green-200">
-                            🌱 Vegan
-                        </span>
-                    )}
-                    {item.dietary?.includes('vegetarian') && !item.dietary?.includes('vegan') && (
-                        <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs bg-green-50 text-green-700 border border-green-200">
-                            🥬 Vegetarian
-                        </span>
-                    )}
-                    {item.dietary?.includes('gluten-free') && (
-                        <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs bg-amber-50 text-amber-700 border border-amber-200">
-                            🌾 Gluten-Free
-                        </span>
-                    )}
-                    {/* Spice Level */}
-                    {item.spiceLevel !== undefined && item.spiceLevel > 0 && (
-                        <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs bg-red-50 text-red-700 border border-red-200">
-                            {item.spiceLevel === 1 && '🌶️'}
-                            {item.spiceLevel === 2 && '🌶️🌶️'}
-                            {item.spiceLevel === 3 && '🌶️🌶️🌶️'}
-                        </span>
+                    {/* Customisable text below */}
+                    {hasCustomization && (
+                        <div className="mt-3.5 text-center">
+                            <span className="text-[11px] text-gray-500 font-medium">Customisable</span>
+                        </div>
                     )}
                 </div>
             </div>
-
-            {/* Right Image & Button */}
-            <div className="w-32 shrink-0">
-                <div className="relative w-full h-32">
-                    {item.imageUrl ? (
-                        <img
-                            src={item.imageUrl}
-                            alt={item.name}
-                            className="w-full h-full object-cover rounded-xl"
-                        />
-                    ) : (
-                        <div className="w-full h-full bg-gradient-to-br from-orange-100 to-red-100 rounded-xl flex items-center justify-center text-orange-400">
-                            <ChefHat className="w-7 h-7" />
-                        </div>
-                    )}
-
-                    {/* ADD button overlapping image */}
-                    <div className="absolute -bottom-3 left-1/2 transform -translate-x-1/2">
-                        <Button
-                            className="w-24 bg-green-600 text-white hover:bg-green-700 border-none shadow-sm font-bold h-8 uppercase text-sm rounded-lg transition-all duration-300"
-                            onClick={() => onAdd(item)}
-                        >
-                            ADD
-                        </Button>
-                    </div>
-                </div>
-
-                {/* Customisable text below */}
-                <div className="mt-3 text-center h-4">
-                    {item.customizationOptions && item.customizationOptions.length > 0 && (
-                        <span className="text-[11px] text-gray-500">Customisable</span>
-                    )}
-                </div>
-            </div>
+            {/* Separator line */}
+            {showDivider && (
+                <div className="border-b border-gray-200" />
+            )}
         </div>
-        {/* Separator line */}
-        {showDivider && (
-            <div className="border-b border-gray-200" />
-        )}
-    </div>
-);
+    );
+};
 
 
 
@@ -151,6 +175,9 @@ export default function MenuOrderPage() {
     const [sessionId, setSessionId] = useState<string | null>(null);
     const [isSessionClosed, setIsSessionClosed] = useState(false);
     const [categoryOrder, setCategoryOrder] = useState<string[]>([]);
+    const [subcategoryOrder, setSubcategoryOrder] = useState<Record<string, string[]>>({});
+    const [expandedCategories, setExpandedCategories] = useState<Set<string>>(new Set());
+    const [selectedSubcategory, setSelectedSubcategory] = useState<string | null>(null);
     const [billOrders, setBillOrders] = useState<Order[]>([]);
 
     // Search & Filter State
@@ -259,6 +286,12 @@ export default function MenuOrderPage() {
                 if (restaurantData.categoryOrder) {
                     setCategoryOrder(restaurantData.categoryOrder);
                 }
+                if (restaurantData.subcategoryOrder) {
+                    setSubcategoryOrder(restaurantData.subcategoryOrder);
+                }
+
+                // Sort items by their order field
+                items.sort((a, b) => (a.order || 0) - (b.order || 0));
 
                 setMenuItems(items);
             }
@@ -377,8 +410,18 @@ export default function MenuOrderPage() {
 
     const uniqueCategories = Array.from(new Set(menuItems.map((item) => item.category)));
     const categories = Array.from(new Set([...categoryOrder, ...uniqueCategories])).filter(c => uniqueCategories.includes(c));
+
+    // Check if selected category has subcategories
+    const selectedCategoryHasSubcats = selectedCategory
+        ? menuItems.some(item => item.category === selectedCategory && item.subcategory)
+        : false;
+
     const displayedItems = selectedCategory
-        ? menuItems.filter((item) => item.category === selectedCategory)
+        ? selectedSubcategory
+            ? menuItems.filter((item) => item.category === selectedCategory && item.subcategory === selectedSubcategory)
+            : selectedCategoryHasSubcats
+                ? [] // If category has subcategories but none selected, show nothing
+                : menuItems.filter((item) => item.category === selectedCategory)
         : menuItems;
 
     const filteredItems = displayedItems.filter(item => {
@@ -399,14 +442,10 @@ export default function MenuOrderPage() {
     });
 
     const handleAddToCartClick = (item: MenuItem) => {
-        if (item.customizationOptions && item.customizationOptions.length > 0) {
-            setSelectedItem(item);
-            setCustomizationSelections({});
-            setItemNotes('');
-            setCustomizationModalOpen(true);
-        } else {
-            addToCart(item);
-        }
+        setSelectedItem(item);
+        setCustomizationSelections({});
+        setItemNotes('');
+        setCustomizationModalOpen(true);
     };
 
     const handleConfirmCustomization = () => {
@@ -629,7 +668,10 @@ export default function MenuOrderPage() {
                                 <h2 className="text-sm font-semibold text-gray-500 uppercase tracking-wider mb-3 px-4">Categories</h2>
                                 <nav className="space-y-1">
                                     <button
-                                        onClick={() => setSelectedCategory(null)}
+                                        onClick={() => {
+                                            setSelectedCategory(null);
+                                            setSelectedSubcategory(null);
+                                        }}
                                         className={`w-full text-left px-4 py-2.5 hover:bg-orange-50 transition-colors text-sm font-medium ${!selectedCategory
                                             ? 'text-orange-600 bg-orange-50 border-l-4 border-orange-600'
                                             : 'text-gray-700 border-l-4 border-transparent'
@@ -637,18 +679,74 @@ export default function MenuOrderPage() {
                                     >
                                         All Items
                                     </button>
-                                    {categories.map((category) => (
-                                        <button
-                                            key={category}
-                                            onClick={() => setSelectedCategory(category)}
-                                            className={`w-full text-left px-4 py-2.5 hover:bg-orange-50 transition-colors text-sm font-medium ${selectedCategory === category
-                                                ? 'text-orange-600 bg-orange-50 border-l-4 border-orange-600'
-                                                : 'text-gray-700 border-l-4 border-transparent'
-                                                }`}
-                                        >
-                                            {category}
-                                        </button>
-                                    ))}
+                                    {categories.map((category) => {
+                                        // Get subcategories for this category from menu items
+                                        const categorySubcats = Array.from(new Set(
+                                            menuItems
+                                                .filter(item => item.category === category && item.subcategory)
+                                                .map(item => item.subcategory!)
+                                        ));
+                                        // Sort by subcategoryOrder
+                                        const orderedSubcats = subcategoryOrder[category] || [];
+                                        const sortedSubcats = [...new Set([...orderedSubcats, ...categorySubcats])].filter(s => categorySubcats.includes(s));
+                                        const hasSubcategories = sortedSubcats.length > 0;
+                                        const isExpanded = expandedCategories.has(category);
+                                        const isActive = selectedCategory === category;
+
+                                        return (
+                                            <div key={category}>
+                                                <button
+                                                    onClick={() => {
+                                                        if (hasSubcategories) {
+                                                            // Toggle expansion
+                                                            setExpandedCategories(prev => {
+                                                                const newSet = new Set(prev);
+                                                                if (newSet.has(category)) {
+                                                                    newSet.delete(category);
+                                                                } else {
+                                                                    newSet.add(category);
+                                                                }
+                                                                return newSet;
+                                                            });
+                                                        }
+                                                        setSelectedCategory(category);
+                                                        setSelectedSubcategory(null);
+                                                    }}
+                                                    className={`w-full text-left px-4 py-2.5 hover:bg-orange-50 transition-colors text-sm font-medium flex items-center justify-between ${isActive && !selectedSubcategory
+                                                        ? 'text-orange-600 bg-orange-50 border-l-4 border-orange-600'
+                                                        : isActive && selectedSubcategory
+                                                            ? 'text-orange-500 border-l-4 border-orange-300'
+                                                            : 'text-gray-700 border-l-4 border-transparent'
+                                                        }`}
+                                                >
+                                                    <span>{category}</span>
+                                                    {hasSubcategories && (
+                                                        <ChevronRight className={`h-4 w-4 transition-transform ${isExpanded ? 'rotate-90' : ''}`} />
+                                                    )}
+                                                </button>
+                                                {/* Subcategory list */}
+                                                {hasSubcategories && isExpanded && (
+                                                    <div className="ml-4 border-l border-gray-200">
+                                                        {sortedSubcats.map(subcat => (
+                                                            <button
+                                                                key={subcat}
+                                                                onClick={() => {
+                                                                    setSelectedCategory(category);
+                                                                    setSelectedSubcategory(subcat);
+                                                                }}
+                                                                className={`w-full text-left px-4 py-2 hover:bg-orange-50 transition-colors text-xs font-medium ${selectedSubcategory === subcat
+                                                                    ? 'text-orange-600 bg-orange-50'
+                                                                    : 'text-gray-600'
+                                                                    }`}
+                                                            >
+                                                                {subcat}
+                                                            </button>
+                                                        ))}
+                                                    </div>
+                                                )}
+                                            </div>
+                                        );
+                                    })}
                                 </nav>
                             </div>
                         </aside>
@@ -759,58 +857,69 @@ export default function MenuOrderPage() {
                             </Card>
                         ) : (
                             <div className="space-y-0">
-                                {Object.entries(filteredItems.reduce((acc, item) => {
-                                    const cat = item.category || 'Other';
-                                    if (!acc[cat]) acc[cat] = [];
-                                    acc[cat].push(item);
-                                    return acc;
-                                }, {} as Record<string, MenuItem[]>)).map(([category, items]) => {
-                                    // Group items by subcategory
-                                    const itemsBySub: Record<string, MenuItem[]> = { 'direct': [] };
+                                {/* Group items by category, then iterate in categoryOrder */}
+                                {(() => {
+                                    const itemsByCategory = filteredItems.reduce((acc, item) => {
+                                        const cat = item.category || 'Other';
+                                        if (!acc[cat]) acc[cat] = [];
+                                        acc[cat].push(item);
+                                        return acc;
+                                    }, {} as Record<string, MenuItem[]>);
 
-                                    items.forEach(item => {
-                                        if (item.subcategory) {
-                                            if (!itemsBySub[item.subcategory]) itemsBySub[item.subcategory] = [];
-                                            itemsBySub[item.subcategory].push(item);
-                                        } else {
-                                            itemsBySub['direct'].push(item);
-                                        }
+                                    // Get all categories that have items
+                                    const categoriesWithItems = Object.keys(itemsByCategory);
+
+                                    // Sort categories: first by categoryOrder, then any remaining
+                                    const sortedCategories = [...new Set([...categoryOrder, ...categoriesWithItems])].filter(c => categoriesWithItems.includes(c));
+
+                                    return sortedCategories.map(category => {
+                                        const items = itemsByCategory[category] || [];
+                                        // Group items by subcategory
+                                        const itemsBySub: Record<string, MenuItem[]> = { 'direct': [] };
+
+                                        items.forEach(item => {
+                                            if (item.subcategory) {
+                                                if (!itemsBySub[item.subcategory]) itemsBySub[item.subcategory] = [];
+                                                itemsBySub[item.subcategory].push(item);
+                                            } else {
+                                                itemsBySub['direct'].push(item);
+                                            }
+                                        });
+
+                                        // Determine order of subcategories from restaurant's subcategoryOrder
+                                        const categorySubOrder = subcategoryOrder[category] || [];
+                                        const subcategoryKeys = Object.keys(itemsBySub).filter(k => k !== 'direct');
+                                        // Sort subcategories: first by order in subcategoryOrder, then alphabetically for any not in list
+                                        const subkeys = [...new Set([...categorySubOrder, ...subcategoryKeys])].filter(k => subcategoryKeys.includes(k));
+
+                                        return (
+                                            <div key={category} id={`category-${category}`}>
+                                                {!selectedCategory && (
+                                                    <h2 className="text-2xl font-bold mb-3 pb-2 text-gray-800 border-b-2 border-orange-200">{category}</h2>
+                                                )}
+
+                                                {/* Direct Items */}
+                                                {itemsBySub['direct'].length > 0 && (
+                                                    <div className="mb-4">
+                                                        {itemsBySub['direct'].map((item, index) => (
+                                                            <MenuItemRow key={item.id} item={item} onAdd={handleAddToCartClick} showDivider={index < itemsBySub['direct'].length - 1} />
+                                                        ))}
+                                                    </div>
+                                                )}
+
+                                                {/* Subcategories */}
+                                                {subkeys.map(sub => (
+                                                    <div key={sub} className="mb-6 ml-2">
+                                                        <h3 className="text-xl font-semibold mb-3 text-orange-900/80">{sub}</h3>
+                                                        {itemsBySub[sub].map((item, index) => (
+                                                            <MenuItemRow key={item.id} item={item} onAdd={handleAddToCartClick} showDivider={index < itemsBySub[sub].length - 1} />
+                                                        ))}
+                                                    </div>
+                                                ))}
+                                            </div>
+                                        )
                                     });
-
-                                    // Determine order of subcategories if available (from restaurantData if we had it, but here we might need to fetch/store it)
-                                    // For now, sorting alphabetically or insert order (Object.keys)
-                                    // We didn't load `subcategoryOrder` in this file yet. To be perfect, we should load it.
-                                    // Let's assume for now iterate keys.
-
-                                    const subkeys = Object.keys(itemsBySub).filter(k => k !== 'direct').sort();
-
-                                    return (
-                                        <div key={category} id={`category-${category}`}>
-                                            {!selectedCategory && (
-                                                <h2 className="text-2xl font-bold mb-3 pb-2 text-gray-800 border-b-2 border-orange-200">{category}</h2>
-                                            )}
-
-                                            {/* Direct Items */}
-                                            {itemsBySub['direct'].length > 0 && (
-                                                <div className="mb-4">
-                                                    {itemsBySub['direct'].map((item, index) => (
-                                                        <MenuItemRow key={item.id} item={item} onAdd={handleAddToCartClick} showDivider={index < itemsBySub['direct'].length - 1} />
-                                                    ))}
-                                                </div>
-                                            )}
-
-                                            {/* Subcategories */}
-                                            {subkeys.map(sub => (
-                                                <div key={sub} className="mb-6 ml-2">
-                                                    <h3 className="text-xl font-semibold mb-3 text-orange-900/80">{sub}</h3>
-                                                    {itemsBySub[sub].map((item, index) => (
-                                                        <MenuItemRow key={item.id} item={item} onAdd={handleAddToCartClick} showDivider={index < itemsBySub[sub].length - 1} />
-                                                    ))}
-                                                </div>
-                                            ))}
-                                        </div>
-                                    )
-                                })}
+                                })()}
                             </div>
                         )}
                     </div>
@@ -981,117 +1090,171 @@ export default function MenuOrderPage() {
                 </DialogContent>
             </Dialog>
 
-            {/* Customization Modal */}
+            {/* Item Detail & Customization Modal */}
             <Dialog open={customizationModalOpen} onOpenChange={setCustomizationModalOpen}>
-                <DialogContent className="max-w-md max-h-[90vh] flex flex-col bg-white p-0 gap-0">
+                <DialogContent className="max-w-lg max-h-[90vh] flex flex-col bg-white p-0 gap-0 overflow-hidden" hideClose>
                     {selectedItem && (
                         <>
-                            <div className="p-6 border-b">
-                                <DialogHeader>
-                                    <div className="flex justify-between items-start">
-                                        <div>
-                                            <DialogTitle className="text-xl font-bold">{selectedItem.name}</DialogTitle>
-                                            <DialogDescription className="mt-1 text-base text-gray-600">
-                                                €{selectedItem.price.toFixed(2)}
-                                            </DialogDescription>
+                            {/* Scrollable Content */}
+                            <div className="flex-1 overflow-y-auto">
+                                {/* Item Image */}
+                                <div className="relative h-64 sm:h-72 w-full">
+                                    {selectedItem.imageUrl ? (
+                                        <img
+                                            src={selectedItem.imageUrl}
+                                            alt={selectedItem.name}
+                                            className="w-full h-full object-cover"
+                                        />
+                                    ) : (
+                                        <div className="w-full h-full bg-gradient-to-br from-orange-100 to-red-100 flex items-center justify-center text-orange-400">
+                                            <ChefHat className="w-12 h-12" />
                                         </div>
-                                        {selectedItem.dietary?.includes('vegetarian') ? (
-                                            <div className="border border-green-600 p-[2px] rounded-sm">
-                                                <div className="w-2 h-2 bg-green-600 rounded-full" />
+                                    )}
+                                    <button
+                                        onClick={() => setCustomizationModalOpen(false)}
+                                        className="absolute top-4 right-4 p-2 bg-black/40 hover:bg-black/60 rounded-full text-white transition-colors"
+                                    >
+                                        <X className="h-5 w-5" />
+                                    </button>
+                                </div>
+
+                                <div className="p-6 space-y-6">
+                                    {/* Header Info */}
+                                    <div className="space-y-2">
+                                        <div className="flex justify-between items-start">
+                                            <div className="space-y-1">
+                                                <div className="flex items-center gap-2">
+                                                    {selectedItem.dietary?.includes('non-vegetarian') ? (
+                                                        <div className="border border-red-600 p-[2px] rounded-sm">
+                                                            <div className="w-2 h-2 bg-red-600 rounded-full" />
+                                                        </div>
+                                                    ) : (
+                                                        <div className="border border-green-600 p-[2px] rounded-sm">
+                                                            <div className="w-2 h-2 bg-green-600 rounded-full" />
+                                                        </div>
+                                                    )}
+                                                    <DialogTitle className="text-2xl font-bold">{selectedItem.name}</DialogTitle>
+                                                </div>
+                                                <p className="text-xl font-bold text-orange-600">€{selectedItem.price.toFixed(2)}</p>
                                             </div>
-                                        ) : (
-                                            <div className="border border-red-600 p-[2px] rounded-sm">
-                                                <div className="w-2 h-2 bg-red-600 rounded-full" />
+
+                                            {/* Badges */}
+                                            <div className="flex gap-2">
+                                                {selectedItem.isChefSpecial && (
+                                                    <span className="bg-orange-100 text-orange-700 text-[10px] font-bold px-2 py-1 rounded-full uppercase">Chef's Special</span>
+                                                )}
+                                                {selectedItem.isBestseller && (
+                                                    <span className="bg-orange-100 text-orange-700 text-[10px] font-bold px-2 py-1 rounded-full uppercase">Bestseller</span>
+                                                )}
+                                            </div>
+                                        </div>
+
+                                        <p className="text-gray-600 leading-relaxed">{selectedItem.description}</p>
+
+                                        {/* Allergens */}
+                                        {selectedItem.allergens && selectedItem.allergens.length > 0 && (
+                                            <div className="pt-2">
+                                                <h4 className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-1">Allergen Info</h4>
+                                                <p className="text-sm text-gray-500 italic">
+                                                    Contains: {selectedItem.allergens.join(', ')}
+                                                </p>
                                             </div>
                                         )}
                                     </div>
-                                </DialogHeader>
-                            </div>
 
-                            <div className="flex-1 overflow-y-auto p-6 space-y-6">
-                                {/* Customization Groups */}
-                                {selectedItem.customizationOptions?.map((group) => (
-                                    <div key={group.id} className="space-y-3">
-                                        <div className="flex justify-between items-center">
-                                            <h3 className="font-bold text-lg">{group.name}</h3>
-                                            <span className="text-sm text-muted-foreground">
-                                                {group.type === 'single' ? 'Select 1' : `Select up to ${group.maxSelection || 'any'}`}
-                                            </span>
-                                        </div>
-                                        <div className="space-y-2">
-                                            {group.options.map((option) => {
-                                                const isSelected = customizationSelections[group.id]?.some(opt => opt.name === option.name);
-                                                return (
-                                                    <div key={option.name} className="flex items-center justify-between py-2">
-                                                        <div className="flex items-center space-x-3">
-                                                            {group.type === 'single' ? (
-                                                                <div
-                                                                    className={`w-5 h-5 rounded-full border flex items-center justify-center cursor-pointer ${isSelected ? 'border-green-600' : 'border-gray-300'}`}
-                                                                    onClick={() => {
-                                                                        setCustomizationSelections(prev => ({
-                                                                            ...prev,
-                                                                            [group.id]: [option]
-                                                                        }));
-                                                                    }}
-                                                                >
-                                                                    {isSelected && <div className="w-2.5 h-2.5 bg-green-600 rounded-full" />}
-                                                                </div>
-                                                            ) : (
-                                                                <div
-                                                                    className={`w-5 h-5 rounded border flex items-center justify-center cursor-pointer ${isSelected ? 'bg-green-600 border-green-600' : 'border-gray-300'}`}
-                                                                    onClick={() => {
-                                                                        setCustomizationSelections(prev => {
-                                                                            const current = prev[group.id] || [];
-                                                                            if (isSelected) {
-                                                                                return { ...prev, [group.id]: current.filter(o => o.name !== option.name) };
-                                                                            } else {
-                                                                                if (group.maxSelection && current.length >= group.maxSelection) return prev;
-                                                                                return { ...prev, [group.id]: [...current, option] };
-                                                                            }
-                                                                        });
-                                                                    }}
-                                                                >
-                                                                    {isSelected && <CheckCircle2 className="w-3.5 h-3.5 text-white" />}
-                                                                </div>
-                                                            )}
-                                                            <div className="flex flex-col">
-                                                                <span className="font-medium">{option.name}</span>
-                                                                <div className="flex gap-1">
-                                                                    {option.isVegetarian && <span className="text-[10px] text-green-600 border border-green-200 px-1 rounded">Veg</span>}
-                                                                    {option.isVegan && <span className="text-[10px] text-green-600 border border-green-200 px-1 rounded">Vegan</span>}
-                                                                    {option.isGlutenFree && <span className="text-[10px] text-amber-600 border border-amber-200 px-1 rounded">GF</span>}
+                                    {/* Customization Groups */}
+                                    {selectedItem.customizationOptions?.map((group) => (
+                                        <div key={group.id} className="space-y-4 pt-4 border-t">
+                                            <div className="flex justify-between items-center">
+                                                <div>
+                                                    <h3 className="font-bold text-lg">{group.name}</h3>
+                                                    <p className="text-sm text-muted-foreground">
+                                                        {group.type === 'single' ? 'Select 1 option' : `Select up to ${group.maxSelection || 'any'} options`}
+                                                    </p>
+                                                </div>
+                                                {group.type === 'single' && (
+                                                    <span className="text-[10px] bg-gray-100 text-gray-500 px-2 py-1 rounded font-bold uppercase">Required</span>
+                                                )}
+                                            </div>
+                                            <div className="space-y-1">
+                                                {group.options.map((option) => {
+                                                    const isSelected = customizationSelections[group.id]?.some(opt => opt.name === option.name);
+                                                    return (
+                                                        <label
+                                                            key={option.name}
+                                                            className={`flex items-center justify-between p-3 rounded-xl border-2 transition-all cursor-pointer ${isSelected ? 'border-green-600 bg-green-50/50' : 'border-transparent bg-gray-50 hover:bg-gray-100'}`}
+                                                            onClick={(e) => {
+                                                                e.preventDefault();
+                                                                setCustomizationSelections(prev => {
+                                                                    const current = prev[group.id] || [];
+                                                                    if (group.type === 'single') {
+                                                                        return { ...prev, [group.id]: [option] };
+                                                                    } else {
+                                                                        if (isSelected) {
+                                                                            return { ...prev, [group.id]: current.filter(o => o.name !== option.name) };
+                                                                        } else {
+                                                                            if (group.maxSelection && current.length >= group.maxSelection) return prev;
+                                                                            return { ...prev, [group.id]: [...current, option] };
+                                                                        }
+                                                                    }
+                                                                });
+                                                            }}
+                                                        >
+                                                            <div className="flex items-center gap-3">
+                                                                {group.type === 'single' ? (
+                                                                    <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center ${isSelected ? 'border-green-600' : 'border-gray-300'}`}>
+                                                                        {isSelected && <div className="w-2.5 h-2.5 bg-green-600 rounded-full" />}
+                                                                    </div>
+                                                                ) : (
+                                                                    <div className={`w-5 h-5 rounded border-2 flex items-center justify-center ${isSelected ? 'bg-green-600 border-green-600' : 'border-gray-300'}`}>
+                                                                        {isSelected && <CheckCircle2 className="w-4 h-4 text-white" />}
+                                                                    </div>
+                                                                )}
+                                                                <div className="flex flex-col">
+                                                                    <span className="font-semibold text-gray-800">{option.name}</span>
+                                                                    <div className="flex gap-1.5 mt-0.5">
+                                                                        {option.isVegetarian && <span className="text-[9px] text-green-700 bg-green-100 px-1.5 py-0.5 rounded font-bold uppercase">Veg</span>}
+                                                                        {option.isVegan && <span className="text-[9px] text-green-700 bg-green-100 px-1.5 py-0.5 rounded font-bold uppercase">Vegan</span>}
+                                                                        {option.isGlutenFree && <span className="text-[9px] text-amber-700 bg-amber-100 px-1.5 py-0.5 rounded font-bold uppercase">GF</span>}
+                                                                    </div>
                                                                 </div>
                                                             </div>
-                                                        </div>
-                                                        <span className="text-sm text-gray-600">
-                                                            {option.price > 0 ? `+ €${option.price.toFixed(2)}` : 'Free'}
-                                                        </span>
-                                                    </div>
-                                                );
-                                            })}
+                                                            <span className="text-sm font-bold text-gray-600">
+                                                                {option.price > 0 ? `+€${option.price.toFixed(2)}` : '€0.00'}
+                                                            </span>
+                                                        </label>
+                                                    );
+                                                })}
+                                            </div>
                                         </div>
-                                    </div>
-                                ))}
+                                    ))}
 
-                                {/* Notes Section */}
-                                <div className="space-y-3 pt-4 border-t">
-                                    <h3 className="font-bold text-lg">Special Requests</h3>
-                                    <textarea
-                                        className="w-full min-h-[100px] p-3 border rounded-lg resize-none focus:outline-none focus:ring-2 focus:ring-primary"
-                                        placeholder="Add notes for the kitchen (e.g. no onions, extra spicy)..."
-                                        value={itemNotes}
-                                        onChange={(e) => setItemNotes(e.target.value)}
-                                    />
+                                    {/* Notes Section */}
+                                    <div className="space-y-3 pt-6 border-t">
+                                        <div className="flex items-center gap-2">
+                                            <h3 className="font-bold text-lg">Notes</h3>
+                                            <span className="text-xs text-muted-foreground font-medium">(Optional)</span>
+                                        </div>
+                                        <textarea
+                                            className="w-full min-h-[100px] p-4 bg-gray-50 border-2 border-transparent focus:border-orange-500 rounded-2xl resize-none focus:outline-none transition-all text-sm"
+                                            placeholder="Add a note"
+                                            value={itemNotes}
+                                            onChange={(e) => setItemNotes(e.target.value)}
+                                        />
+                                    </div>
                                 </div>
                             </div>
 
-                            <div className="p-4 border-t bg-gray-50">
+                            {/* Sticky Footer */}
+                            <div className="p-4 border-t bg-white shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.05)]">
                                 <Button
-                                    className="w-full h-12 text-lg font-bold bg-green-600 hover:bg-green-700"
+                                    className="w-full h-14 text-lg font-bold bg-green-600 hover:bg-green-700 rounded-2xl shadow-lg shadow-green-200 transition-all active:scale-95 flex justify-between px-6"
                                     onClick={handleConfirmCustomization}
                                 >
-                                    Add Item to Cart - €
-                                    {(selectedItem.price + Object.values(customizationSelections).flat().reduce((sum, opt) => sum + opt.price, 0)).toFixed(2)}
+                                    <span>Add Item to Cart</span>
+                                    <span>
+                                        €{(selectedItem.price + Object.values(customizationSelections).flat().reduce((sum, opt) => sum + opt.price, 0)).toFixed(2)}
+                                    </span>
                                 </Button>
                             </div>
                         </>
@@ -1184,6 +1347,7 @@ export default function MenuOrderPage() {
                             <button
                                 onClick={() => {
                                     setSelectedCategory(null);
+                                    setSelectedSubcategory(null);
                                     setMobileCategoryModalOpen(false);
                                 }}
                                 className={`w-full text-left px-4 py-3 rounded-lg hover:bg-gray-800 transition-colors flex justify-between items-center ${!selectedCategory ? 'bg-gray-800' : ''
@@ -1194,19 +1358,75 @@ export default function MenuOrderPage() {
                             </button>
                             {categories.map((category) => {
                                 const count = menuItems.filter(item => item.category === category).length;
+                                // Get subcategories for this category
+                                const categorySubcats = Array.from(new Set(
+                                    menuItems
+                                        .filter(item => item.category === category && item.subcategory)
+                                        .map(item => item.subcategory!)
+                                ));
+                                const orderedSubcats = subcategoryOrder[category] || [];
+                                const sortedSubcats = [...new Set([...orderedSubcats, ...categorySubcats])].filter(s => categorySubcats.includes(s));
+                                const hasSubcategories = sortedSubcats.length > 0;
+                                const isExpanded = expandedCategories.has(category);
+                                const isActive = selectedCategory === category;
+
                                 return (
-                                    <button
-                                        key={category}
-                                        onClick={() => {
-                                            setSelectedCategory(category);
-                                            setMobileCategoryModalOpen(false);
-                                        }}
-                                        className={`w-full text-left px-4 py-3 rounded-lg hover:bg-gray-800 transition-colors flex justify-between items-center ${selectedCategory === category ? 'bg-gray-800' : ''
-                                            }`}
-                                    >
-                                        <span className="font-medium">{category}</span>
-                                        <span className="text-sm text-gray-400">{count}</span>
-                                    </button>
+                                    <div key={category}>
+                                        <button
+                                            onClick={() => {
+                                                if (hasSubcategories) {
+                                                    setExpandedCategories(prev => {
+                                                        const newSet = new Set(prev);
+                                                        if (newSet.has(category)) {
+                                                            newSet.delete(category);
+                                                        } else {
+                                                            newSet.add(category);
+                                                        }
+                                                        return newSet;
+                                                    });
+                                                    setSelectedCategory(category);
+                                                    setSelectedSubcategory(null);
+                                                } else {
+                                                    setSelectedCategory(category);
+                                                    setSelectedSubcategory(null);
+                                                    setMobileCategoryModalOpen(false);
+                                                }
+                                            }}
+                                            className={`w-full text-left px-4 py-3 rounded-lg hover:bg-gray-800 transition-colors flex justify-between items-center ${isActive && !selectedSubcategory ? 'bg-gray-800' : isActive && selectedSubcategory ? 'bg-gray-800/50' : ''
+                                                }`}
+                                        >
+                                            <span className="font-medium flex items-center gap-2">
+                                                {hasSubcategories && (
+                                                    <ChevronRight className={`h-4 w-4 transition-transform ${isExpanded ? 'rotate-90' : ''}`} />
+                                                )}
+                                                {category}
+                                            </span>
+                                            <span className="text-sm text-gray-400">{count}</span>
+                                        </button>
+                                        {/* Subcategory list */}
+                                        {hasSubcategories && isExpanded && (
+                                            <div className="ml-6 mt-1 space-y-1 border-l border-gray-700 pl-4">
+                                                {sortedSubcats.map(subcat => {
+                                                    const subcatCount = menuItems.filter(item => item.category === category && item.subcategory === subcat).length;
+                                                    return (
+                                                        <button
+                                                            key={subcat}
+                                                            onClick={() => {
+                                                                setSelectedCategory(category);
+                                                                setSelectedSubcategory(subcat);
+                                                                setMobileCategoryModalOpen(false);
+                                                            }}
+                                                            className={`w-full text-left px-3 py-2 rounded-lg hover:bg-gray-800 transition-colors flex justify-between items-center text-sm ${selectedSubcategory === subcat ? 'bg-gray-800 text-orange-400' : 'text-gray-300'
+                                                                }`}
+                                                        >
+                                                            <span>{subcat}</span>
+                                                            <span className="text-xs text-gray-500">{subcatCount}</span>
+                                                        </button>
+                                                    );
+                                                })}
+                                            </div>
+                                        )}
+                                    </div>
                                 );
                             })}
                         </div>

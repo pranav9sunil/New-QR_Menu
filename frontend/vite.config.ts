@@ -12,5 +12,14 @@ export default defineConfig({
   },
   server: {
     port: 5173,
+    proxy: {
+      // Proxy Firebase Storage requests to bypass CORS in development
+      '/firebase-storage': {
+        target: 'https://firebasestorage.googleapis.com',
+        changeOrigin: true,
+        rewrite: (path) => path.replace(/^\/firebase-storage/, ''),
+        secure: true,
+      },
+    },
   },
 })

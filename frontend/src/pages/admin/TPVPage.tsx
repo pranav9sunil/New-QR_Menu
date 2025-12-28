@@ -10,9 +10,10 @@ import {
     addDoc,
     serverTimestamp,
     doc,
-    updateDoc
+    updateDoc,
+    onSnapshot
 } from 'firebase/firestore';
-import type { MenuItem, CartItem, CustomizationOption, Table } from '@/types';
+import type { MenuItem, CartItem, CustomizationOption, Table, Order } from '@/types';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 
@@ -78,6 +79,9 @@ export default function TPVPage() {
     const [editingCartItemIndex, setEditingCartItemIndex] = useState<number | null>(null);
     const [currentNote, setCurrentNote] = useState('');
 
+    // Previous Orders (from active session)
+    const [previousOrders, setPreviousOrders] = useState<Order[]>([]);
+
     // Mobile Cart Sheet
 
 
@@ -120,6 +124,56 @@ export default function TPVPage() {
             // setLoading(false);
         }
     };
+
+    // Subscribe to previous orders when table is selected
+    useEffect(() => {
+        if (!selectedTableId || !restaurantId) {
+            setPreviousOrders([]);
+            return;
+        }
+
+        // First, find active session for this table
+        const sessionsRef = collection(db, 'sessions');
+        const sessionQuery = query(
+            sessionsRef,
+            where('tableId', '==', selectedTableId),
+            where('status', 'in', ['active', 'payment_pending'])
+        );
+
+        const unsubscribeSession = onSnapshot(sessionQuery, async (sessionSnapshot) => {
+            if (sessionSnapshot.empty) {
+                setPreviousOrders([]);
+                return;
+            }
+
+            const sessionId = sessionSnapshot.docs[0].id;
+
+            // Subscribe to orders for this session
+            const ordersRef = collection(db, 'orders');
+            const ordersQuery = query(
+                ordersRef,
+                where('sessionId', '==', sessionId)
+            );
+
+            const unsubscribeOrders = onSnapshot(ordersQuery, (ordersSnapshot) => {
+                const orders: Order[] = [];
+                ordersSnapshot.forEach((doc) => {
+                    orders.push({ id: doc.id, ...doc.data() } as Order);
+                });
+                // Sort by creation time (newest first)
+                orders.sort((a, b) => {
+                    const aTime = a.createdAt instanceof Date ? a.createdAt.getTime() : (a.createdAt as any)?.toMillis?.() || 0;
+                    const bTime = b.createdAt instanceof Date ? b.createdAt.getTime() : (b.createdAt as any)?.toMillis?.() || 0;
+                    return bTime - aTime;
+                });
+                setPreviousOrders(orders);
+            });
+
+            return () => unsubscribeOrders();
+        });
+
+        return () => unsubscribeSession();
+    }, [selectedTableId, restaurantId]);
 
     const handleAddToCart = (item: MenuItem) => {
         if (item.customizationOptions && item.customizationOptions.length > 0) {
@@ -308,59 +362,131 @@ export default function TPVPage() {
                 </select>
             </div>
 
-            {/* Cart Items */}
+            {/* Cart Items - Current Order (Light Green) */}
             <div className="flex-1 overflow-y-auto p-3 space-y-2 min-h-0">
-                {cart.length === 0 ? (
+                {cart.length === 0 && previousOrders.length === 0 ? (
                     <div className="text-center text-muted-foreground py-8">
                         <p>No items added</p>
                     </div>
                 ) : (
-                    cart.map((item, index) => (
-                        <div key={index} className="flex flex-col gap-1 pb-2 border-b last:border-0">
-                            <div className="flex justify-between items-start w-full">
-                                <div className="flex-1 min-w-0 pr-2">
-                                    <div className="font-medium text-sm truncate">{item.name}</div>
-                                    <div className="text-[10px] text-muted-foreground leading-tight">
-                                        €{item.price.toFixed(2)}
-                                        {item.selectedCustomizations && Object.values(item.selectedCustomizations).flat().length > 0 && (
-                                            <span className="ml-1">
-                                                (+{Object.values(item.selectedCustomizations).flat().map(opt => opt.name).join(', ')})
-                                            </span>
-                                        )}
-                                    </div>
-                                    {item.notes && (
-                                        <div className="text-[10px] bg-yellow-50 text-yellow-800 p-0.5 rounded mt-0.5 flex items-start gap-1 inline-block">
-                                            <PenLine className="h-2.5 w-2.5 mt-0.5 inline" />
-                                            {item.notes}
+                    <>
+                        {/* Current Order Items */}
+                        {cart.length > 0 && (
+                            <div className="space-y-2">
+                                <div className="text-xs font-semibold text-green-700 uppercase tracking-wider">Current Order</div>
+                                {cart.map((item, index) => (
+                                    <div key={index} className="flex flex-col gap-1 pb-2 border-b last:border-0 bg-green-50 rounded-lg p-2">
+                                        <div className="flex justify-between items-start w-full">
+                                            <div className="flex-1 min-w-0 pr-2">
+                                                <div className="font-medium text-sm truncate">{item.name}</div>
+                                                <div className="text-[10px] text-muted-foreground leading-tight">
+                                                    €{item.price.toFixed(2)}
+                                                    {item.selectedCustomizations && Object.values(item.selectedCustomizations).flat().length > 0 && (
+                                                        <span className="ml-1">
+                                                            (+{Object.values(item.selectedCustomizations).flat().map(opt => opt.name).join(', ')})
+                                                        </span>
+                                                    )}
+                                                </div>
+                                                {item.notes && (
+                                                    <div className="text-[10px] bg-yellow-50 text-yellow-800 p-0.5 rounded mt-0.5 flex items-start gap-1 inline-block">
+                                                        <PenLine className="h-2.5 w-2.5 mt-0.5 inline" />
+                                                        {item.notes}
+                                                    </div>
+                                                )}
+                                            </div>
+
+                                            <div className="flex items-center gap-2 shrink-0 self-start mt-0.5">
+                                                {/* Quantity Controls */}
+                                                <div className="flex items-center gap-1 bg-white rounded-md h-6 px-1">
+                                                    <button onClick={() => updateQuantity(index, -1)} className="p-0.5 hover:bg-gray-100 rounded transition-colors">
+                                                        <Minus className="h-3 w-3" />
+                                                    </button>
+                                                    <span className="font-medium w-4 text-center text-[10px]">{item.quantity}</span>
+                                                    <button onClick={() => updateQuantity(index, 1)} className="p-0.5 hover:bg-gray-100 rounded transition-colors">
+                                                        <Plus className="h-3 w-3" />
+                                                    </button>
+                                                </div>
+
+                                                {/* Total Price */}
+                                                <div className="font-bold text-sm w-14 text-right">
+                                                    €{(item.price * item.quantity).toFixed(2)}
+                                                </div>
+
+                                                {/* Note Button */}
+                                                <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => openNoteModal(index)} title="Add Note">
+                                                    <PenLine className="h-3 w-3 text-muted-foreground hover:text-primary" />
+                                                </Button>
+                                            </div>
                                         </div>
-                                    )}
-                                </div>
-
-                                <div className="flex items-center gap-2 shrink-0 self-start mt-0.5">
-                                    {/* Quantity Controls */}
-                                    <div className="flex items-center gap-1 bg-gray-100 rounded-md h-6 px-1">
-                                        <button onClick={() => updateQuantity(index, -1)} className="p-0.5 hover:bg-white rounded transition-colors">
-                                            <Minus className="h-3 w-3" />
-                                        </button>
-                                        <span className="font-medium w-4 text-center text-[10px]">{item.quantity}</span>
-                                        <button onClick={() => updateQuantity(index, 1)} className="p-0.5 hover:bg-white rounded transition-colors">
-                                            <Plus className="h-3 w-3" />
-                                        </button>
                                     </div>
-
-                                    {/* Total Price */}
-                                    <div className="font-bold text-sm w-14 text-right">
-                                        €{(item.price * item.quantity).toFixed(2)}
-                                    </div>
-
-                                    {/* Note Button */}
-                                    <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => openNoteModal(index)} title="Add Note">
-                                        <PenLine className="h-3 w-3 text-muted-foreground hover:text-primary" />
-                                    </Button>
-                                </div>
+                                ))}
                             </div>
-                        </div>
-                    ))
+                        )}
+
+                        {/* Divider between current and previous orders */}
+                        {cart.length > 0 && previousOrders.length > 0 && (
+                            <div className="border-t border-gray-300 my-3" />
+                        )}
+
+                        {/* Previous Orders (Pale Red) - Consolidated */}
+                        {previousOrders.length > 0 && (() => {
+                            // Consolidate all items from all orders
+                            const consolidatedItems: { name: string; price: number; quantity: number; notes?: string; customizations?: string }[] = [];
+
+                            previousOrders.forEach(order => {
+                                order.items.forEach(item => {
+                                    const customizationsKey = item.selectedCustomizations?.map(c => c.name).sort().join(',') || '';
+                                    const existingIndex = consolidatedItems.findIndex(
+                                        ci => ci.name === item.name && ci.price === item.price && ci.customizations === customizationsKey
+                                    );
+
+                                    if (existingIndex >= 0) {
+                                        consolidatedItems[existingIndex].quantity += item.quantity;
+                                    } else {
+                                        consolidatedItems.push({
+                                            name: item.name,
+                                            price: item.price,
+                                            quantity: item.quantity,
+                                            notes: item.notes,
+                                            customizations: customizationsKey
+                                        });
+                                    }
+                                });
+                            });
+
+                            return (
+                                <div className="space-y-2">
+                                    <div className="text-xs font-semibold text-red-700 uppercase tracking-wider">Previous Orders</div>
+                                    {consolidatedItems.map((item, index) => (
+                                        <div key={index} className="flex flex-col gap-1 pb-2 border-b last:border-0 bg-red-50 rounded-lg p-2">
+                                            <div className="flex justify-between items-start w-full">
+                                                <div className="flex-1 min-w-0 pr-2">
+                                                    <div className="font-medium text-sm truncate text-red-900">{item.name}</div>
+                                                    <div className="text-[10px] text-red-700 leading-tight">
+                                                        €{item.price.toFixed(2)} × {item.quantity}
+                                                        {item.customizations && (
+                                                            <span className="ml-1">
+                                                                (+{item.customizations})
+                                                            </span>
+                                                        )}
+                                                    </div>
+                                                    {item.notes && (
+                                                        <div className="text-[10px] bg-yellow-50 text-yellow-800 p-0.5 rounded mt-0.5 flex items-start gap-1 inline-block">
+                                                            <PenLine className="h-2.5 w-2.5 mt-0.5 inline" />
+                                                            {item.notes}
+                                                        </div>
+                                                    )}
+                                                </div>
+                                                <div className="font-bold text-sm w-14 text-right text-red-900">
+                                                    €{(item.price * item.quantity).toFixed(2)}
+                                                </div>
+                                            </div>
+                                        </div>
+                                    ))}
+                                </div>
+                            );
+                        })()}
+                    </>
                 )}
             </div>
 

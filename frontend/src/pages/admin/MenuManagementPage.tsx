@@ -25,7 +25,7 @@ import {
     DialogHeader,
     DialogTitle,
 } from '@/components/ui/dialog';
-import { Plus, Edit2, Trash2, Settings2, X } from 'lucide-react';
+import { Plus, Edit2, Trash2, Settings2, X, Upload } from 'lucide-react';
 import MenuStructureDialog from '@/components/admin/MenuStructureDialog';
 
 export default function MenuManagementPage() {
@@ -37,6 +37,9 @@ export default function MenuManagementPage() {
     const [dialogOpen, setDialogOpen] = useState(false);
     const [editingItem, setEditingItem] = useState<MenuItem | null>(null);
     const [structureDialogOpen, setStructureDialogOpen] = useState(false);
+    const [imageFile, setImageFile] = useState<File | null>(null);
+    const [imagePreview, setImagePreview] = useState<string | null>(null);
+    const [uploading, setUploading] = useState(false);
 
     const [formData, setFormData] = useState({
         name: '',
@@ -81,7 +84,7 @@ export default function MenuManagementPage() {
             const restaurantSnap = await getDoc(restaurantRef);
 
             if (restaurantSnap.exists()) {
-                const data = restaurantSnap.data();
+                const data = restaurantSnap.data() as any;
                 if (data.categoryOrder) {
                     setCategoryOrder(data.categoryOrder);
                 }
@@ -101,11 +104,98 @@ export default function MenuManagementPage() {
         }
     };
 
+    const handleImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+        const file = e.target.files?.[0];
+        if (file) {
+            setImageFile(file);
+            const reader = new FileReader();
+            reader.onloadend = () => {
+                setImagePreview(reader.result as string);
+            };
+            reader.readAsDataURL(file);
+        }
+    };
+
+    /**
+     * Converts an image file to a compressed base64 data URL.
+     * This stores the image directly in Firestore, bypassing Firebase Storage and CORS.
+     * @param file - The image file to convert
+     * @param maxWidth - Maximum width for compression (default: 800px)
+     * @param quality - JPEG quality 0-1 (default: 0.8 for 80% quality)
+     */
+    const convertImageToDataUrl = (file: File, maxWidth = 800, quality = 0.8): Promise<string> => {
+        return new Promise((resolve, reject) => {
+            const reader = new FileReader();
+            reader.onload = (e) => {
+                const img = new Image();
+                img.onload = () => {
+                    // Create canvas for resizing
+                    const canvas = document.createElement('canvas');
+                    let width = img.width;
+                    let height = img.height;
+
+                    // Calculate new dimensions while maintaining aspect ratio
+                    if (width > maxWidth) {
+                        height = (height * maxWidth) / width;
+                        width = maxWidth;
+                    }
+
+                    canvas.width = width;
+                    canvas.height = height;
+
+                    // Draw and compress
+                    const ctx = canvas.getContext('2d');
+                    if (!ctx) {
+                        reject(new Error('Could not get canvas context'));
+                        return;
+                    }
+
+                    ctx.drawImage(img, 0, 0, width, height);
+
+                    // Convert to JPEG data URL with specified quality
+                    const dataUrl = canvas.toDataURL('image/jpeg', quality);
+                    console.log(`Image converted: ${img.width}x${img.height} -> ${width}x${height}, size: ${(dataUrl.length / 1024).toFixed(0)}KB`);
+
+                    resolve(dataUrl);
+                };
+                img.onerror = () => reject(new Error('Failed to load image'));
+                img.src = e.target?.result as string;
+            };
+            reader.onerror = () => reject(new Error('Failed to read file'));
+            reader.readAsDataURL(file);
+        });
+    };
+
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
         if (!restaurantId) return;
 
         try {
+            setUploading(true);
+            console.log('Submitting item...', { formData, imageFile });
+            let finalImageUrl = formData.imageUrl;
+
+            if (imageFile) {
+                console.log('Converting image to data URL...');
+                try {
+                    const dataUrl = await convertImageToDataUrl(imageFile);
+                    finalImageUrl = dataUrl;
+                    console.log('Image converted successfully');
+                } catch (err) {
+                    console.error('Image conversion failed:', err);
+                    alert('Failed to process the image. Please try a different image.');
+                    setUploading(false);
+                    return;
+                }
+            }
+
+            const parsedPrice = parseFloat(formData.price);
+            if (isNaN(parsedPrice)) {
+                alert('Invalid price value');
+                setUploading(false);
+                return;
+            }
+
             const itemData = {
                 restaurantId,
                 name: formData.name,
@@ -113,7 +203,7 @@ export default function MenuManagementPage() {
                 price: parseFloat(formData.price),
                 category: formData.category,
                 subcategory: formData.subcategory || null, // Optional
-                imageUrl: formData.imageUrl,
+                imageUrl: finalImageUrl,
                 dietary: formData.dietary,
                 spiceLevel: parseInt(formData.spiceLevel),
                 isChefSpecial: formData.isChefSpecial,
@@ -125,8 +215,10 @@ export default function MenuManagementPage() {
             };
 
             if (editingItem) {
+                console.log('Updating existing item:', editingItem.id);
                 await updateDoc(firestoreDoc(db, 'menu_items', editingItem.id), itemData);
             } else {
+                console.log('Adding new item...');
                 await addDoc(collection(db, 'menu_items'), itemData);
 
                 // Add category to order if new
@@ -154,6 +246,7 @@ export default function MenuManagementPage() {
                 }
 
                 if (dataChanged) {
+                    console.log('Updating restaurant document for orders...');
                     await setDoc(firestoreDoc(db, 'restaurants', restaurantId), {
                         categoryOrder: newCategoryOrder,
                         subcategoryOrder: newSubcategoryOrder
@@ -161,10 +254,15 @@ export default function MenuManagementPage() {
                 }
             }
 
+            console.log('Reloading data...');
             await loadData();
+            console.log('Success! Resetting form.');
             resetForm();
         } catch (error) {
             console.error('Error saving menu item:', error);
+            alert(`Error saving menu item: ${error instanceof Error ? error.message : 'Unknown error'}`);
+        } finally {
+            setUploading(false);
         }
     };
 
@@ -195,6 +293,8 @@ export default function MenuManagementPage() {
         });
         setEditingItem(null);
         setDialogOpen(false);
+        setImageFile(null);
+        setImagePreview(null);
     };
 
     const addCustomizationGroup = () => {
@@ -305,6 +405,7 @@ export default function MenuManagementPage() {
             allergens: (item.allergens || []).join(', '),
             customizationOptions: item.customizationOptions || [],
         });
+        setImagePreview(item.imageUrl || null);
         setDialogOpen(true);
     };
 
@@ -490,13 +591,48 @@ export default function MenuManagementPage() {
                         </div>
 
                         <div className="space-y-2">
-                            <Label htmlFor="imageUrl">Image URL</Label>
-                            <Input
-                                id="imageUrl"
-                                value={formData.imageUrl}
-                                onChange={(e) => setFormData({ ...formData, imageUrl: e.target.value })}
-                                placeholder="https://example.com/image.jpg"
-                            />
+                            <Label>Item Image</Label>
+                            <div className="flex items-center gap-4">
+                                <div
+                                    className="relative w-32 h-32 rounded-lg border-2 border-dashed border-gray-300 flex items-center justify-center overflow-hidden bg-gray-50 hover:bg-gray-100 transition-colors cursor-pointer"
+                                    onClick={() => document.getElementById('image-upload')?.click()}
+                                >
+                                    {imagePreview ? (
+                                        <img src={imagePreview} alt="Preview" className="w-full h-full object-cover" />
+                                    ) : (
+                                        <div className="flex flex-col items-center text-gray-400">
+                                            <Upload className="h-6 w-6 mb-1" />
+                                            <span className="text-xs">Upload</span>
+                                        </div>
+                                    )}
+                                    <input
+                                        id="image-upload"
+                                        type="file"
+                                        accept="image/*"
+                                        className="hidden"
+                                        onChange={handleImageChange}
+                                    />
+                                </div>
+                                {imagePreview && (
+                                    <Button
+                                        type="button"
+                                        variant="outline"
+                                        size="sm"
+                                        onClick={() => {
+                                            setImageFile(null);
+                                            setImagePreview(null);
+                                            setFormData({ ...formData, imageUrl: '' });
+                                        }}
+                                    >
+                                        <X className="h-4 w-4 mr-2" />
+                                        Remove
+                                    </Button>
+                                )}
+                                <div className="flex-1 text-xs text-muted-foreground">
+                                    <p>Upload a high-quality image of the dish.</p>
+                                    <p>Recommended size: 800x600px</p>
+                                </div>
+                            </div>
                         </div>
 
                         <div className="grid grid-cols-2 gap-4">
@@ -672,8 +808,8 @@ export default function MenuManagementPage() {
                             <Button type="button" variant="outline" onClick={resetForm}>
                                 Cancel
                             </Button>
-                            <Button type="submit">
-                                {editingItem ? 'Update Item' : 'Add Item'}
+                            <Button type="submit" disabled={uploading}>
+                                {uploading ? 'Saving...' : (editingItem ? 'Update Item' : 'Add Item')}
                             </Button>
                         </div>
                     </form>
