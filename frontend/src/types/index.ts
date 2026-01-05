@@ -12,6 +12,10 @@ export interface Restaurant {
     layoutConfigured: boolean;
     categoryOrder?: string[];
     subcategoryOrder?: Record<string, string[]>;
+    // Translations for categories: { "Appetizers": { es: "Entrantes" } }
+    categoryTranslations?: Record<string, { es?: string }>;
+    // Translations for subcategories: { "Appetizers:Hot": { es: "Calientes" } }
+    subcategoryTranslations?: Record<string, { es?: string }>;
     createdAt: Date;
     updatedAt: Date;
 }
@@ -60,6 +64,9 @@ export interface CustomizationOption {
     isVegetarian?: boolean;
     isVegan?: boolean;
     isGlutenFree?: boolean;
+    translations?: {
+        es?: { name?: string };
+    };
 }
 
 export interface CustomizationGroup {
@@ -69,6 +76,9 @@ export interface CustomizationGroup {
     minSelection?: number;
     maxSelection?: number;
     options: CustomizationOption[];
+    translations?: {
+        es?: { name?: string };
+    };
 }
 
 export interface MenuItem {
@@ -88,6 +98,9 @@ export interface MenuItem {
     isBestseller?: boolean;
     customizationOptions?: CustomizationGroup[];
     order?: number;
+    translations?: {
+        es?: { name?: string; description?: string };
+    };
     createdAt: Date;
 }
 
@@ -144,4 +157,17 @@ export interface TableSession {
     tipAmount?: number;
     tipPercentage?: number;
     closedAt?: Date;
+}
+
+export interface Reservation {
+    id: string;
+    restaurantId: string;
+    customerName: string;
+    phone: string;
+    dateTime: Date;
+    tableId?: string;
+    tableName?: string;
+    notes?: string;
+    status: 'pending' | 'confirmed' | 'cancelled' | 'completed';
+    createdAt: Date;
 }

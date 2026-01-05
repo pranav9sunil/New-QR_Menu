@@ -42,6 +42,7 @@ import {
     Info,
     CalendarClock,
     ChevronDown,
+    MoveRight,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
@@ -89,6 +90,10 @@ export default function TableLayoutDesigner() {
     const [isLayoutDropdownOpen, setIsLayoutDropdownOpen] = useState(false);
     const [editingLayout, setEditingLayout] = useState<TableLayout | null>(null);
     const [showEditLayoutDialog, setShowEditLayoutDialog] = useState(false);
+
+    // Move Order State
+    const [showMoveDropdown, setShowMoveDropdown] = useState(false);
+    const [movingOrder, setMovingOrder] = useState(false);
 
     useEffect(() => {
         console.log('🔍 TableLayoutPage - restaurantId:', restaurantId);
@@ -510,6 +515,68 @@ export default function TableLayoutDesigner() {
         }
     };
 
+    // Move order to another table
+    const handleMoveOrder = async (targetTableId: string) => {
+        if (!selectedTableSession || !restaurantId) return;
+
+        const sourceSession = selectedTableSession.session;
+        const sourceOrders = selectedTableSession.orders;
+        const targetTable = tables.find(t => t.id === targetTableId);
+        const targetSession = activeSessions[targetTableId];
+
+        if (!targetTable) return;
+
+        setMovingOrder(true);
+        setShowMoveDropdown(false);
+
+        try {
+            if (targetSession) {
+                // Target table is occupied - MERGE orders
+                // Update all source orders to point to target session
+                for (const order of sourceOrders) {
+                    await updateDoc(firestoreDoc(db, 'orders', order.id), {
+                        sessionId: targetSession.id,
+                        tableId: targetTableId,
+                        tableName: targetTable.name,
+                    });
+                }
+
+                // Close the source session
+                await updateDoc(firestoreDoc(db, 'sessions', sourceSession.id), {
+                    status: 'closed',
+                    closedAt: new Date(),
+                });
+
+                alert(`Orders merged with ${targetTable.name}`);
+            } else {
+                // Target table is empty - MOVE session
+                // Update the session to point to the new table
+                await updateDoc(firestoreDoc(db, 'sessions', sourceSession.id), {
+                    tableId: targetTableId,
+                    tableName: targetTable.name,
+                });
+
+                // Update all orders to point to new table
+                for (const order of sourceOrders) {
+                    await updateDoc(firestoreDoc(db, 'orders', order.id), {
+                        tableId: targetTableId,
+                        tableName: targetTable.name,
+                    });
+                }
+
+                alert(`Order moved to ${targetTable.name}`);
+            }
+
+            setShowSessionDialog(false);
+            setSelectedTableSession(null);
+        } catch (error) {
+            console.error('Error moving order:', error);
+            alert('Failed to move order');
+        } finally {
+            setMovingOrder(false);
+        }
+    };
+
 
 
     // Filter tables for current layout
@@ -886,7 +953,7 @@ export default function TableLayoutDesigner() {
             {/* Session Details / Bill Dialog */}
             <Dialog open={showSessionDialog} onOpenChange={setShowSessionDialog}>
                 <DialogContent className="max-w-md max-h-[80vh] flex flex-col bg-white">
-                    <DialogHeader>
+                    <DialogHeader className="relative">
                         <DialogTitle className="flex items-center gap-2">
                             <Receipt className="h-5 w-5" />
                             Table Bill: {selectedTableSession?.table.name}
@@ -894,6 +961,47 @@ export default function TableLayoutDesigner() {
                         <DialogDescription>
                             Session Code: {selectedTableSession?.session.code}
                         </DialogDescription>
+
+                        {/* Move Button - Top Right */}
+                        <div className="absolute top-0 right-8">
+                            <div className="relative">
+                                <Button
+                                    variant="outline"
+                                    size="sm"
+                                    onClick={() => setShowMoveDropdown(!showMoveDropdown)}
+                                    disabled={movingOrder}
+                                >
+                                    <MoveRight className="h-4 w-4 mr-1" />
+                                    {movingOrder ? 'Moving...' : 'Move'}
+                                    <ChevronDown className="h-3 w-3 ml-1" />
+                                </Button>
+
+                                {showMoveDropdown && (
+                                    <div className="absolute top-full right-0 mt-1 w-48 bg-white rounded-md border shadow-lg z-50 py-1 max-h-48 overflow-y-auto">
+                                        {filteredTables
+                                            .filter(t => t.id !== selectedTableSession?.table.id)
+                                            .map(table => {
+                                                const isOccupied = !!activeSessions[table.id];
+                                                return (
+                                                    <button
+                                                        key={table.id}
+                                                        className="w-full text-left px-3 py-2 text-sm hover:bg-gray-100 flex justify-between items-center"
+                                                        onClick={() => handleMoveOrder(table.id)}
+                                                    >
+                                                        <span>{table.name}</span>
+                                                        {isOccupied && (
+                                                            <span className="text-xs text-orange-600 font-medium">Merge</span>
+                                                        )}
+                                                    </button>
+                                                );
+                                            })}
+                                        {filteredTables.filter(t => t.id !== selectedTableSession?.table.id).length === 0 && (
+                                            <div className="px-3 py-2 text-sm text-muted-foreground">No other tables</div>
+                                        )}
+                                    </div>
+                                )}
+                            </div>
+                        </div>
                     </DialogHeader>
 
                     <div className="flex-1 overflow-y-auto space-y-4 py-4">
@@ -947,7 +1055,7 @@ export default function TableLayoutDesigner() {
                         </div>
                     )}
 
-                    <DialogFooter className="sm:justify-between gap-2">
+                    <DialogFooter className="flex justify-between gap-2">
                         <Button variant="outline" onClick={() => setShowSessionDialog(false)}>
                             Close
                         </Button>

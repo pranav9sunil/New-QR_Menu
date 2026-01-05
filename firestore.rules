@@ -50,5 +50,10 @@ service cloud.firestore {
     match /user_invitations/{invitationId} {
       allow read, write: if request.auth != null;
     }
+    
+    // Reservations - read/write by authenticated users
+    match /reservations/{reservationId} {
+      allow read, write: if request.auth != null;
+    }
   }
 }

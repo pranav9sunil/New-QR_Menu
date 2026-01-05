@@ -22,6 +22,7 @@ import {
     Dialog,
     DialogContent,
     DialogDescription,
+    DialogFooter,
     DialogHeader,
     DialogTitle,
 } from '@/components/ui/dialog';
@@ -37,6 +38,9 @@ export default function MenuManagementPage() {
     const [dialogOpen, setDialogOpen] = useState(false);
     const [editingItem, setEditingItem] = useState<MenuItem | null>(null);
     const [structureDialogOpen, setStructureDialogOpen] = useState(false);
+    const [translationsDialogOpen, setTranslationsDialogOpen] = useState(false);
+    const [categoryTranslations, setCategoryTranslations] = useState<Record<string, { es?: string }>>({});
+    const [subcategoryTranslations, setSubcategoryTranslations] = useState<Record<string, { es?: string }>>({});
     const [imageFile, setImageFile] = useState<File | null>(null);
     const [imagePreview, setImagePreview] = useState<string | null>(null);
     const [uploading, setUploading] = useState(false);
@@ -53,6 +57,9 @@ export default function MenuManagementPage() {
         isChefSpecial: false,
         allergens: '',
         customizationOptions: [] as CustomizationGroup[],
+        // Spanish translations
+        nameEs: '',
+        descriptionEs: '',
     });
 
     useEffect(() => {
@@ -90,6 +97,12 @@ export default function MenuManagementPage() {
                 }
                 if (data.subcategoryOrder) {
                     setSubcategoryOrder(data.subcategoryOrder);
+                }
+                if (data.categoryTranslations) {
+                    setCategoryTranslations(data.categoryTranslations);
+                }
+                if (data.subcategoryTranslations) {
+                    setSubcategoryTranslations(data.subcategoryTranslations);
                 }
             } else {
                 // Initial category order from items
@@ -212,6 +225,13 @@ export default function MenuManagementPage() {
                 isAvailable: true,
                 createdAt: new Date(),
                 order: menuItems.length, // Append to end
+                // Spanish translations
+                translations: {
+                    es: {
+                        name: formData.nameEs || undefined,
+                        description: formData.descriptionEs || undefined,
+                    }
+                }
             };
 
             if (editingItem) {
@@ -290,6 +310,8 @@ export default function MenuManagementPage() {
             isChefSpecial: false,
             allergens: '',
             customizationOptions: [],
+            nameEs: '',
+            descriptionEs: '',
         });
         setEditingItem(null);
         setDialogOpen(false);
@@ -404,6 +426,8 @@ export default function MenuManagementPage() {
             isChefSpecial: item.isChefSpecial || false,
             allergens: (item.allergens || []).join(', '),
             customizationOptions: item.customizationOptions || [],
+            nameEs: item.translations?.es?.name || '',
+            descriptionEs: item.translations?.es?.description || '',
         });
         setImagePreview(item.imageUrl || null);
         setDialogOpen(true);
@@ -429,6 +453,9 @@ export default function MenuManagementPage() {
                     <Button variant="outline" onClick={() => setStructureDialogOpen(true)}>
                         <Settings2 className="h-4 w-4 mr-2" />
                         Edit Structure
+                    </Button>
+                    <Button variant="outline" onClick={() => setTranslationsDialogOpen(true)}>
+                        🌐 Translations
                     </Button>
                     <Button onClick={() => setDialogOpen(true)}>
                         <Plus className="h-4 w-4 mr-2" />
@@ -516,6 +543,87 @@ export default function MenuManagementPage() {
                 />
             )}
 
+            {/* Category Translations Dialog */}
+            <Dialog open={translationsDialogOpen} onOpenChange={setTranslationsDialogOpen}>
+                <DialogContent className="max-w-lg max-h-[80vh] overflow-y-auto bg-white">
+                    <DialogHeader>
+                        <DialogTitle>🌐 Category Translations</DialogTitle>
+                        <DialogDescription>
+                            Add Spanish translations for your categories and subcategories.
+                        </DialogDescription>
+                    </DialogHeader>
+
+                    <div className="space-y-6 py-4">
+                        {/* Categories */}
+                        <div className="space-y-4">
+                            <h3 className="font-semibold text-lg">Categories</h3>
+                            {categoryOrder.map(category => (
+                                <div key={category} className="grid grid-cols-2 gap-3 items-center">
+                                    <div className="text-sm font-medium">🇬🇧 {category}</div>
+                                    <Input
+                                        placeholder="Spanish name..."
+                                        value={categoryTranslations[category]?.es || ''}
+                                        onChange={(e) => setCategoryTranslations({
+                                            ...categoryTranslations,
+                                            [category]: { es: e.target.value }
+                                        })}
+                                    />
+                                </div>
+                            ))}
+                        </div>
+
+                        {/* Subcategories */}
+                        {Object.entries(subcategoryOrder).some(([_, subs]) => subs.length > 0) && (
+                            <div className="space-y-4 border-t pt-4">
+                                <h3 className="font-semibold text-lg">Subcategories</h3>
+                                {Object.entries(subcategoryOrder).map(([category, subs]) =>
+                                    subs.map(sub => {
+                                        const key = `${category}:${sub}`;
+                                        return (
+                                            <div key={key} className="grid grid-cols-2 gap-3 items-center">
+                                                <div className="text-sm font-medium">
+                                                    🇬🇧 {sub} <span className="text-gray-400 text-xs">({category})</span>
+                                                </div>
+                                                <Input
+                                                    placeholder="Spanish name..."
+                                                    value={subcategoryTranslations[key]?.es || ''}
+                                                    onChange={(e) => setSubcategoryTranslations({
+                                                        ...subcategoryTranslations,
+                                                        [key]: { es: e.target.value }
+                                                    })}
+                                                />
+                                            </div>
+                                        );
+                                    })
+                                )}
+                            </div>
+                        )}
+                    </div>
+
+                    <DialogFooter>
+                        <Button variant="outline" onClick={() => setTranslationsDialogOpen(false)}>
+                            Cancel
+                        </Button>
+                        <Button onClick={async () => {
+                            if (!restaurantId) return;
+                            try {
+                                await setDoc(firestoreDoc(db, 'restaurants', restaurantId), {
+                                    categoryTranslations,
+                                    subcategoryTranslations
+                                }, { merge: true });
+                                setTranslationsDialogOpen(false);
+                                alert('Translations saved!');
+                            } catch (error) {
+                                console.error('Error saving translations:', error);
+                                alert('Failed to save translations');
+                            }
+                        }}>
+                            Save Translations
+                        </Button>
+                    </DialogFooter>
+                </DialogContent>
+            </Dialog>
+
             {/* Add/Edit Dialog */}
             <Dialog open={dialogOpen} onOpenChange={(open) => !open && resetForm()}>
                 <DialogContent className="bg-white max-h-[80vh] overflow-y-auto">
@@ -528,7 +636,7 @@ export default function MenuManagementPage() {
 
                     <form onSubmit={handleSubmit} className="space-y-4">
                         <div className="space-y-2">
-                            <Label htmlFor="name">Name</Label>
+                            <Label htmlFor="name">🇬🇧 Name (English)</Label>
                             <Input
                                 id="name"
                                 value={formData.name}
@@ -538,13 +646,38 @@ export default function MenuManagementPage() {
                         </div>
 
                         <div className="space-y-2">
-                            <Label htmlFor="description">Description</Label>
+                            <Label htmlFor="description">🇬🇧 Description (English)</Label>
                             <Input
                                 id="description"
                                 value={formData.description}
                                 onChange={(e) => setFormData({ ...formData, description: e.target.value })}
                                 required
                             />
+                        </div>
+
+                        {/* Spanish Translations */}
+                        <div className="border-t pt-4 mt-4">
+                            <p className="text-sm font-medium text-gray-500 mb-3">🇪🇸 Spanish Translation (Optional)</p>
+                            <div className="space-y-3">
+                                <div className="space-y-2">
+                                    <Label htmlFor="nameEs">Name (Spanish)</Label>
+                                    <Input
+                                        id="nameEs"
+                                        value={formData.nameEs}
+                                        onChange={(e) => setFormData({ ...formData, nameEs: e.target.value })}
+                                        placeholder="Leave empty to use English"
+                                    />
+                                </div>
+                                <div className="space-y-2">
+                                    <Label htmlFor="descriptionEs">Description (Spanish)</Label>
+                                    <Input
+                                        id="descriptionEs"
+                                        value={formData.descriptionEs}
+                                        onChange={(e) => setFormData({ ...formData, descriptionEs: e.target.value })}
+                                        placeholder="Leave empty to use English"
+                                    />
+                                </div>
+                            </div>
                         </div>
 
                         <div className="space-y-2">

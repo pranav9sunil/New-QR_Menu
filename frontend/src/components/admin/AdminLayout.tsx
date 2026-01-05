@@ -99,6 +99,12 @@ const DEFAULT_MENU_ITEMS = [
         path: '/admin/qr-codes',
         id: 'qr-codes',
     },
+    {
+        label: 'Reservations',
+        icon: Receipt,
+        path: '/admin/reservations',
+        id: 'reservations',
+    },
 ];
 
 function SortableSidebarItem({ item, onClick }: { item: any, onClick?: () => void }) {

@@ -27,12 +27,18 @@ import {
     DialogHeader,
     DialogTitle,
 } from '@/components/ui/dialog';
+import { useLanguage } from '@/contexts/LanguageContext';
+import LanguageSelector from '@/components/shared/LanguageSelector';
 
 const MenuItemRow = ({ item, onAdd, showDivider }: { item: MenuItem, onAdd: (item: MenuItem) => void, showDivider: boolean }) => {
     const [isExpanded, setIsExpanded] = useState(false);
+    const { getLocalizedText, t } = useLanguage();
     const hasCustomization = item.customizationOptions && item.customizationOptions.length > 0;
     const descriptionLimit = 80;
-    const isLongDescription = item.description?.length > descriptionLimit;
+
+    const localizedName = getLocalizedText(item, 'name');
+    const localizedDescription = getLocalizedText(item, 'description');
+    const isLongDescription = localizedDescription?.length > descriptionLimit;
 
     return (
         <div className="relative">
@@ -50,7 +56,7 @@ const MenuItemRow = ({ item, onAdd, showDivider }: { item: MenuItem, onAdd: (ite
                                     <div className="w-2 h-2 bg-green-600 rounded-full" />
                                 </div>
                             )}
-                            <h3 className="font-bold text-lg">{item.name}</h3>
+                            <h3 className="font-bold text-lg">{localizedName}</h3>
 
                             {/* Chef's Special and Bestseller Badges */}
                             <div className="flex items-center gap-1.5">
@@ -70,10 +76,10 @@ const MenuItemRow = ({ item, onAdd, showDivider }: { item: MenuItem, onAdd: (ite
                     <div className="font-bold text-orange-600 text-base">€{item.price.toFixed(2)}</div>
                     <div className="text-sm text-muted-foreground leading-snug">
                         {isExpanded || !isLongDescription ? (
-                            item.description
+                            localizedDescription
                         ) : (
                             <>
-                                {item.description.slice(0, descriptionLimit)}
+                                {localizedDescription.slice(0, descriptionLimit)}
                                 <button
                                     onClick={(e) => {
                                         e.stopPropagation();
@@ -136,7 +142,7 @@ const MenuItemRow = ({ item, onAdd, showDivider }: { item: MenuItem, onAdd: (ite
                                 className="w-24 bg-green-600 text-white hover:bg-green-700 border-none shadow-sm font-bold h-8 uppercase text-sm rounded-lg transition-all duration-300"
                                 onClick={() => onAdd(item)}
                             >
-                                ADD
+                                {t('item.add')}
                             </Button>
                         </div>
                     </div>
@@ -144,7 +150,7 @@ const MenuItemRow = ({ item, onAdd, showDivider }: { item: MenuItem, onAdd: (ite
                     {/* Customisable text below */}
                     {hasCustomization && (
                         <div className="mt-3.5 text-center">
-                            <span className="text-[11px] text-gray-500 font-medium">Customisable</span>
+                            <span className="text-[11px] text-gray-500 font-medium">{t('item.customizable')}</span>
                         </div>
                     )}
                 </div>
@@ -163,6 +169,7 @@ export default function MenuOrderPage() {
     const [searchParams] = useSearchParams();
     const navigate = useNavigate();
     const tableName = searchParams.get('table') || 'Unknown Table';
+    const { t, language, getLocalizedText } = useLanguage();
 
     const [menuItems, setMenuItems] = useState<MenuItem[]>([]);
     const [cart, setCart] = useState<CartItem[]>([]);
@@ -176,6 +183,8 @@ export default function MenuOrderPage() {
     const [isSessionClosed, setIsSessionClosed] = useState(false);
     const [categoryOrder, setCategoryOrder] = useState<string[]>([]);
     const [subcategoryOrder, setSubcategoryOrder] = useState<Record<string, string[]>>({});
+    const [categoryTranslations, setCategoryTranslations] = useState<Record<string, { es?: string }>>({});
+    const [subcategoryTranslations, setSubcategoryTranslations] = useState<Record<string, { es?: string }>>({});
     const [expandedCategories, setExpandedCategories] = useState<Set<string>>(new Set());
     const [selectedSubcategory, setSelectedSubcategory] = useState<string | null>(null);
     const [billOrders, setBillOrders] = useState<Order[]>([]);
@@ -219,6 +228,23 @@ export default function MenuOrderPage() {
     const [customTipAmount, setCustomTipAmount] = useState('');
     const [calculatedTip, setCalculatedTip] = useState(0);
     const [sessionTipAmount, setSessionTipAmount] = useState(0);
+
+    // Helper to get localized category name
+    const getLocalizedCategory = (category: string): string => {
+        if (language === 'es' && categoryTranslations[category]?.es) {
+            return categoryTranslations[category].es;
+        }
+        return category;
+    };
+
+    // Helper to get localized subcategory name
+    const getLocalizedSubcategory = (category: string, subcategory: string): string => {
+        const key = `${category}:${subcategory}`;
+        if (language === 'es' && subcategoryTranslations[key]?.es) {
+            return subcategoryTranslations[key].es;
+        }
+        return subcategory;
+    };
 
     useEffect(() => {
         const storedSessionId = localStorage.getItem('sessionId');
@@ -288,6 +314,12 @@ export default function MenuOrderPage() {
                 }
                 if (restaurantData.subcategoryOrder) {
                     setSubcategoryOrder(restaurantData.subcategoryOrder);
+                }
+                if (restaurantData.categoryTranslations) {
+                    setCategoryTranslations(restaurantData.categoryTranslations);
+                }
+                if (restaurantData.subcategoryTranslations) {
+                    setSubcategoryTranslations(restaurantData.subcategoryTranslations);
                 }
 
                 // Sort items by their order field
@@ -635,18 +667,21 @@ export default function MenuOrderPage() {
 
 
                         <div className="flex items-center gap-2">
+                            {/* Language Selector */}
+                            <LanguageSelector />
+
                             <Button
                                 onClick={handleRequestBill}
                                 variant="outline"
                                 className="border-white text-white hover:bg-white/20 transition-colors"
                             >
                                 <Receipt className="h-5 w-5 mr-2" />
-                                Ready to Pay
+                                {t('bill.request')}
                             </Button>
                             <div className="flex items-center gap-2">
                                 <Button className="relative bg-white text-orange-600 hover:bg-white/90 shadow-md font-semibold" onClick={() => setCartOpen(true)}>
                                     <ShoppingCart className="h-5 w-5 mr-2" />
-                                    Cart
+                                    {t('cart.button')}
                                     {cart.length > 0 && (
                                         <span className="absolute -top-2 -right-2 bg-red-600 text-white text-xs font-bold rounded-full h-5 w-5 flex items-center justify-center shadow-lg">
                                             {cart.reduce((sum, item) => sum + item.quantity, 0)}
@@ -665,7 +700,7 @@ export default function MenuOrderPage() {
                     {categories.length > 0 && (
                         <aside className="hidden lg:block w-64 pr-6">
                             <div className="space-y-1">
-                                <h2 className="text-sm font-semibold text-gray-500 uppercase tracking-wider mb-3 px-4">Categories</h2>
+                                <h2 className="text-sm font-semibold text-gray-500 uppercase tracking-wider mb-3 px-4">{t('menu.categories')}</h2>
                                 <nav className="space-y-1">
                                     <button
                                         onClick={() => {
@@ -677,7 +712,7 @@ export default function MenuOrderPage() {
                                             : 'text-gray-700 border-l-4 border-transparent'
                                             }`}
                                     >
-                                        All Items
+                                        {t('menu.allItems')}
                                     </button>
                                     {categories.map((category) => {
                                         // Get subcategories for this category from menu items
@@ -719,7 +754,7 @@ export default function MenuOrderPage() {
                                                             : 'text-gray-700 border-l-4 border-transparent'
                                                         }`}
                                                 >
-                                                    <span>{category}</span>
+                                                    <span>{getLocalizedCategory(category)}</span>
                                                     {hasSubcategories && (
                                                         <ChevronRight className={`h-4 w-4 transition-transform ${isExpanded ? 'rotate-90' : ''}`} />
                                                     )}
@@ -739,7 +774,7 @@ export default function MenuOrderPage() {
                                                                     : 'text-gray-600'
                                                                     }`}
                                                             >
-                                                                {subcat}
+                                                                {getLocalizedSubcategory(category, subcat)}
                                                             </button>
                                                         ))}
                                                     </div>
@@ -760,7 +795,7 @@ export default function MenuOrderPage() {
                                     <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-muted-foreground h-4 w-4" />
                                     <input
                                         type="text"
-                                        placeholder="Search menu..."
+                                        placeholder={t('menu.search')}
                                         className="w-full pl-10 pr-4 py-2 border border-orange-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-orange-500 bg-white"
                                         value={searchQuery}
                                         onChange={(e) => setSearchQuery(e.target.value)}
@@ -774,7 +809,7 @@ export default function MenuOrderPage() {
                                         onClick={() => setShowFilters(!showFilters)}
                                         className="h-full px-4 border-orange-200 hover:bg-orange-50"
                                     >
-                                        <span className="hidden sm:inline mr-2">Filters</span>
+                                        <span className="hidden sm:inline mr-2">{t('menu.filters')}</span>
                                         <ChevronDown className={`h-4 w-4 transition-transform ${showFilters ? 'rotate-180' : ''}`} />
                                     </Button>
 
@@ -787,7 +822,7 @@ export default function MenuOrderPage() {
                                                     onChange={() => setActiveFilters(prev => ({ ...prev, veg: !prev.veg }))}
                                                     className="rounded border-gray-300 text-green-600 focus:ring-green-500"
                                                 />
-                                                <span className="text-sm">Vegetarian</span>
+                                                <span className="text-sm">{t('filter.vegetarian')}</span>
                                             </label>
                                             <label className="flex items-center space-x-2">
                                                 <input
@@ -796,7 +831,7 @@ export default function MenuOrderPage() {
                                                     onChange={() => setActiveFilters(prev => ({ ...prev, nonVeg: !prev.nonVeg }))}
                                                     className="rounded border-gray-300 text-red-600 focus:ring-red-500"
                                                 />
-                                                <span className="text-sm">Non-Veg</span>
+                                                <span className="text-sm">{t('filter.nonVeg')}</span>
                                             </label>
                                             <label className="flex items-center space-x-2">
                                                 <input
@@ -805,7 +840,7 @@ export default function MenuOrderPage() {
                                                     onChange={() => setActiveFilters(prev => ({ ...prev, vegan: !prev.vegan }))}
                                                     className="rounded border-gray-300 text-green-600 focus:ring-green-500"
                                                 />
-                                                <span className="text-sm">Vegan</span>
+                                                <span className="text-sm">{t('filter.vegan')}</span>
                                             </label>
                                             <label className="flex items-center space-x-2">
                                                 <input
@@ -814,7 +849,7 @@ export default function MenuOrderPage() {
                                                     onChange={() => setActiveFilters(prev => ({ ...prev, gf: !prev.gf }))}
                                                     className="rounded border-gray-300 text-amber-600 focus:ring-amber-500"
                                                 />
-                                                <span className="text-sm">Gluten Free</span>
+                                                <span className="text-sm">{t('filter.glutenFree')}</span>
                                             </label>
                                             <label className="flex items-center space-x-2 col-span-2">
                                                 <input
@@ -823,7 +858,7 @@ export default function MenuOrderPage() {
                                                     onChange={() => setActiveFilters(prev => ({ ...prev, chefSpecial: !prev.chefSpecial }))}
                                                     className="rounded border-gray-300 text-orange-600 focus:ring-orange-500"
                                                 />
-                                                <span className="text-sm">Chef's Special</span>
+                                                <span className="text-sm">{t('filter.chefSpecial')}</span>
                                             </label>
                                             <label className="flex items-center space-x-2 col-span-2">
                                                 <input
@@ -832,7 +867,7 @@ export default function MenuOrderPage() {
                                                     onChange={() => setActiveFilters(prev => ({ ...prev, bestseller: !prev.bestseller }))}
                                                     className="rounded border-gray-300 text-orange-600 focus:ring-orange-500"
                                                 />
-                                                <span className="text-sm">Bestseller</span>
+                                                <span className="text-sm">{t('filter.bestseller')}</span>
                                             </label>
                                         </div>
                                     )}
@@ -842,17 +877,22 @@ export default function MenuOrderPage() {
 
                         <div className="mb-6">
                             <h1 className="text-3xl font-bold">
-                                {selectedCategory || 'Our Menu'}
+                                {selectedCategory ? getLocalizedCategory(selectedCategory) : t('menu.ourMenu')}
                             </h1>
                             <p className="text-muted-foreground">
-                                {filteredItems.length} {filteredItems.length === 1 ? 'item' : 'items'}
+                                {filteredItems.length} {filteredItems.length === 1 ? t('cart.item') : t('cart.items')}
                             </p>
                         </div>
 
                         {filteredItems.length === 0 ? (
                             <Card>
                                 <CardContent className="py-12 text-center text-muted-foreground">
-                                    <p>No menu items found matching your criteria.</p>
+                                    <p>
+                                        {selectedCategoryHasSubcats && !selectedSubcategory
+                                            ? t('category.selectSubcategory')
+                                            : t('general.noResults') + ' matching your criteria.'
+                                        }
+                                    </p>
                                 </CardContent>
                             </Card>
                         ) : (
@@ -1133,7 +1173,7 @@ export default function MenuOrderPage() {
                                                             <div className="w-2 h-2 bg-green-600 rounded-full" />
                                                         </div>
                                                     )}
-                                                    <DialogTitle className="text-2xl font-bold">{selectedItem.name}</DialogTitle>
+                                                    <DialogTitle className="text-2xl font-bold">{getLocalizedText(selectedItem, 'name')}</DialogTitle>
                                                 </div>
                                                 <p className="text-xl font-bold text-orange-600">€{selectedItem.price.toFixed(2)}</p>
                                             </div>
@@ -1141,22 +1181,22 @@ export default function MenuOrderPage() {
                                             {/* Badges */}
                                             <div className="flex gap-2">
                                                 {selectedItem.isChefSpecial && (
-                                                    <span className="bg-orange-100 text-orange-700 text-[10px] font-bold px-2 py-1 rounded-full uppercase">Chef's Special</span>
+                                                    <span className="bg-orange-100 text-orange-700 text-[10px] font-bold px-2 py-1 rounded-full uppercase">{t('filter.chefSpecial')}</span>
                                                 )}
                                                 {selectedItem.isBestseller && (
-                                                    <span className="bg-orange-100 text-orange-700 text-[10px] font-bold px-2 py-1 rounded-full uppercase">Bestseller</span>
+                                                    <span className="bg-orange-100 text-orange-700 text-[10px] font-bold px-2 py-1 rounded-full uppercase">{t('filter.bestseller')}</span>
                                                 )}
                                             </div>
                                         </div>
 
-                                        <p className="text-gray-600 leading-relaxed">{selectedItem.description}</p>
+                                        <p className="text-gray-600 leading-relaxed">{getLocalizedText(selectedItem, 'description')}</p>
 
                                         {/* Allergens */}
                                         {selectedItem.allergens && selectedItem.allergens.length > 0 && (
                                             <div className="pt-2">
-                                                <h4 className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-1">Allergen Info</h4>
+                                                <h4 className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-1">{t('item.allergenInfo')}</h4>
                                                 <p className="text-sm text-gray-500 italic">
-                                                    Contains: {selectedItem.allergens.join(', ')}
+                                                    {t('item.contains')}: {selectedItem.allergens.join(', ')}
                                                 </p>
                                             </div>
                                         )}
@@ -1232,12 +1272,12 @@ export default function MenuOrderPage() {
                                     {/* Notes Section */}
                                     <div className="space-y-3 pt-6 border-t">
                                         <div className="flex items-center gap-2">
-                                            <h3 className="font-bold text-lg">Notes</h3>
-                                            <span className="text-xs text-muted-foreground font-medium">(Optional)</span>
+                                            <h3 className="font-bold text-lg">{t('item.notesTitle')}</h3>
+                                            <span className="text-xs text-muted-foreground font-medium">({t('item.optional')})</span>
                                         </div>
                                         <textarea
                                             className="w-full min-h-[100px] p-4 bg-gray-50 border-2 border-transparent focus:border-orange-500 rounded-2xl resize-none focus:outline-none transition-all text-sm"
-                                            placeholder="Add a note"
+                                            placeholder={t('item.notesPlaceholder')}
                                             value={itemNotes}
                                             onChange={(e) => setItemNotes(e.target.value)}
                                         />
@@ -1251,7 +1291,7 @@ export default function MenuOrderPage() {
                                     className="w-full h-14 text-lg font-bold bg-green-600 hover:bg-green-700 rounded-2xl shadow-lg shadow-green-200 transition-all active:scale-95 flex justify-between px-6"
                                     onClick={handleConfirmCustomization}
                                 >
-                                    <span>Add Item to Cart</span>
+                                    <span>{t('item.addItemToCart')}</span>
                                     <span>
                                         €{(selectedItem.price + Object.values(customizationSelections).flat().reduce((sum, opt) => sum + opt.price, 0)).toFixed(2)}
                                     </span>
@@ -1333,7 +1373,7 @@ export default function MenuOrderPage() {
                     {/* Modal Content */}
                     <div className="lg:hidden fixed bottom-0 left-0 right-0 z-50 bg-gray-900 text-white rounded-t-3xl shadow-2xl max-h-[70vh] overflow-y-auto">
                         <div className="sticky top-0 bg-gray-900 px-6 py-4 border-b border-gray-800 flex justify-between items-center">
-                            <h2 className="text-xl font-bold">Menu Categories</h2>
+                            <h2 className="text-xl font-bold">{t('menu.menuCategories')}</h2>
                             <button
                                 onClick={() => setMobileCategoryModalOpen(false)}
                                 className="text-gray-400 hover:text-white"
@@ -1353,7 +1393,7 @@ export default function MenuOrderPage() {
                                 className={`w-full text-left px-4 py-3 rounded-lg hover:bg-gray-800 transition-colors flex justify-between items-center ${!selectedCategory ? 'bg-gray-800' : ''
                                     }`}
                             >
-                                <span className="font-medium">All Items</span>
+                                <span className="font-medium">{t('menu.allItems')}</span>
                                 <span className="text-sm text-gray-400">{menuItems.length}</span>
                             </button>
                             {categories.map((category) => {
@@ -1399,7 +1439,7 @@ export default function MenuOrderPage() {
                                                 {hasSubcategories && (
                                                     <ChevronRight className={`h-4 w-4 transition-transform ${isExpanded ? 'rotate-90' : ''}`} />
                                                 )}
-                                                {category}
+                                                {getLocalizedCategory(category)}
                                             </span>
                                             <span className="text-sm text-gray-400">{count}</span>
                                         </button>
@@ -1419,7 +1459,7 @@ export default function MenuOrderPage() {
                                                             className={`w-full text-left px-3 py-2 rounded-lg hover:bg-gray-800 transition-colors flex justify-between items-center text-sm ${selectedSubcategory === subcat ? 'bg-gray-800 text-orange-400' : 'text-gray-300'
                                                                 }`}
                                                         >
-                                                            <span>{subcat}</span>
+                                                            <span>{getLocalizedSubcategory(category, subcat)}</span>
                                                             <span className="text-xs text-gray-500">{subcatCount}</span>
                                                         </button>
                                                     );
