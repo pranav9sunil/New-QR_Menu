@@ -829,7 +829,18 @@ export default function TableLayoutDesigner() {
                                                         ? "bg-red-100 text-red-800 border-red-200"
                                                         : "bg-white text-gray-800 border-gray-200"
                                                 )}>
-                                                    {isPaymentPending ? "BILL READY" : `Code: ${session.code}`}
+                                                    {isPaymentPending ? (
+                                                        <div className="flex flex-col">
+                                                            <span>BILL READY</span>
+                                                            <span className="text-[10px] font-medium">
+                                                                {(session as any).paymentType === 'split'
+                                                                    ? '💳 Split Payment'
+                                                                    : (session as any).paymentMethod === 'cash'
+                                                                        ? '💵 Cash'
+                                                                        : '💳 Card'}
+                                                            </span>
+                                                        </div>
+                                                    ) : `Code: ${session.code}`}
                                                 </div>
                                             )}
 

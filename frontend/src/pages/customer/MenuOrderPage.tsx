@@ -17,7 +17,7 @@ import type { MenuItem, CartItem, Order } from '@/types';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card, CardContent } from '@/components/ui/card';
-import { ChefHat, ShoppingCart, Plus, Minus, Trash2, Receipt, Download, Search, History, CheckCircle2, ChevronDown, ChevronRight, X } from 'lucide-react';
+import { ChefHat, ShoppingCart, Plus, Minus, Trash2, Receipt, Download, Search, History, CheckCircle2, ChevronDown, ChevronRight, X, Banknote, Users, CreditCard } from 'lucide-react';
 import { jsPDF } from 'jspdf';
 import {
     Dialog,
@@ -228,6 +228,12 @@ export default function MenuOrderPage() {
     const [customTipAmount, setCustomTipAmount] = useState('');
     const [calculatedTip, setCalculatedTip] = useState(0);
     const [sessionTipAmount, setSessionTipAmount] = useState(0);
+
+    // Payment type state
+    const [paymentTypeModalOpen, setPaymentTypeModalOpen] = useState(false);
+    const [paymentMethodModalOpen, setPaymentMethodModalOpen] = useState(false);
+    const [, setSelectedPaymentType] = useState<'full' | 'split' | null>(null);
+    const [, setSelectedPaymentMethod] = useState<'cash' | 'card' | null>(null);
 
     // Helper to get localized category name
     const getLocalizedCategory = (category: string): string => {
@@ -544,16 +550,53 @@ export default function MenuOrderPage() {
     };
 
     const handleConfirmBillWithTip = async () => {
+        // Close tip dialog and open payment type selection
+        setTipDialogOpen(false);
+        setPaymentTypeModalOpen(true);
+    };
+
+    const handlePaymentTypeSelect = (type: 'full' | 'split') => {
+        setSelectedPaymentType(type);
+        setPaymentTypeModalOpen(false);
+
+        if (type === 'full') {
+            // Show payment method selection for Pay in Full
+            setPaymentMethodModalOpen(true);
+        } else {
+            // For split payment, submit directly with split type
+            handleFinalBillSubmit('split', null);
+        }
+    };
+
+    const handlePaymentMethodSelect = (method: 'cash' | 'card') => {
+        setSelectedPaymentMethod(method);
+        setPaymentMethodModalOpen(false);
+        handleFinalBillSubmit('full', method);
+    };
+
+    const handleFinalBillSubmit = async (paymentType: 'full' | 'split', paymentMethod: 'cash' | 'card' | null) => {
         if (!sessionId) return;
         try {
             const sessionRef = doc(db, 'sessions', sessionId);
             await updateDoc(sessionRef, {
                 status: 'payment_pending',
                 tipAmount: calculatedTip,
-                tipPercentage: selectedTipPercentage
+                tipPercentage: selectedTipPercentage,
+                paymentType,
+                paymentMethod
             });
-            setTipDialogOpen(false);
-            alert('Server notified! Your bill is on the way.');
+
+            // Reset all payment states
+            setSelectedPaymentType(null);
+            setSelectedPaymentMethod(null);
+            setSelectedTipPercentage(null);
+            setCustomTipAmount('');
+            setCalculatedTip(0);
+
+            const methodText = paymentType === 'split'
+                ? 'Split Payment'
+                : (paymentMethod === 'cash' ? 'Cash' : 'Card');
+            alert(`Server notified! Payment method: ${methodText}. Your bill is on the way.`);
         } catch (error) {
             console.error('Error requesting bill:', error);
             alert('Failed to request bill');
@@ -1489,7 +1532,7 @@ export default function MenuOrderPage() {
                         <div className="space-y-2">
                             <label className="text-sm font-medium">Quick Select</label>
                             <div className="grid grid-cols-4 gap-2">
-                                {[5, 10, 18, 25].map((percentage) => (
+                                {[5, 10, 18, 0].map((percentage) => (
                                     <Button
                                         key={percentage}
                                         type="button"
@@ -1497,7 +1540,7 @@ export default function MenuOrderPage() {
                                         onClick={() => setSelectedTipPercentage(percentage)}
                                         className="h-12"
                                     >
-                                        {percentage}%
+                                        {percentage === 0 ? 'No Tip' : `${percentage}%`}
                                     </Button>
                                 ))}
                             </div>
@@ -1546,6 +1589,62 @@ export default function MenuOrderPage() {
                             Confirm & Request Bill
                         </Button>
                     </DialogFooter>
+                </DialogContent>
+            </Dialog>
+
+            {/* Payment Type Modal */}
+            <Dialog open={paymentTypeModalOpen} onOpenChange={setPaymentTypeModalOpen}>
+                <DialogContent className="bg-white max-w-md">
+                    <DialogHeader>
+                        <DialogTitle>Payment Type</DialogTitle>
+                        <DialogDescription>How would you like to pay?</DialogDescription>
+                    </DialogHeader>
+                    <div className="grid grid-cols-2 gap-4 py-6">
+                        <Button
+                            variant="outline"
+                            className="h-24 flex flex-col items-center justify-center gap-2 border-2 hover:border-green-500 hover:bg-green-50"
+                            onClick={() => handlePaymentTypeSelect('full')}
+                        >
+                            <Banknote className="h-8 w-8 text-green-600" />
+                            <span className="font-semibold">Pay in Full</span>
+                        </Button>
+                        <Button
+                            variant="outline"
+                            className="h-24 flex flex-col items-center justify-center gap-2 border-2 hover:border-orange-500 hover:bg-orange-50"
+                            onClick={() => handlePaymentTypeSelect('split')}
+                        >
+                            <Users className="h-8 w-8 text-orange-600" />
+                            <span className="font-semibold">Split Payment</span>
+                        </Button>
+                    </div>
+                </DialogContent>
+            </Dialog>
+
+            {/* Payment Method Modal */}
+            <Dialog open={paymentMethodModalOpen} onOpenChange={setPaymentMethodModalOpen}>
+                <DialogContent className="bg-white max-w-md">
+                    <DialogHeader>
+                        <DialogTitle>Payment Method</DialogTitle>
+                        <DialogDescription>How would you like to pay?</DialogDescription>
+                    </DialogHeader>
+                    <div className="grid grid-cols-2 gap-4 py-6">
+                        <Button
+                            variant="outline"
+                            className="h-24 flex flex-col items-center justify-center gap-2 border-2 hover:border-green-500 hover:bg-green-50"
+                            onClick={() => handlePaymentMethodSelect('cash')}
+                        >
+                            <Banknote className="h-8 w-8 text-green-600" />
+                            <span className="font-semibold">Cash</span>
+                        </Button>
+                        <Button
+                            variant="outline"
+                            className="h-24 flex flex-col items-center justify-center gap-2 border-2 hover:border-blue-500 hover:bg-blue-50"
+                            onClick={() => handlePaymentMethodSelect('card')}
+                        >
+                            <CreditCard className="h-8 w-8 text-blue-600" />
+                            <span className="font-semibold">Card</span>
+                        </Button>
+                    </div>
                 </DialogContent>
             </Dialog>
 

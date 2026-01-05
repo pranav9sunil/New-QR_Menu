@@ -118,6 +118,8 @@ export interface Order {
     discount?: number;
     discountType?: 'percentage' | 'fixed';
     manualOrder?: boolean;
+    paymentType?: 'full' | 'split';
+    paymentMethod?: 'cash' | 'card' | null;
     createdAt: Date;
 }
 

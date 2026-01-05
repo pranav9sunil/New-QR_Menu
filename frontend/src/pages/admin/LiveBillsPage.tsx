@@ -26,7 +26,7 @@ import {
     DialogHeader,
     DialogTitle,
 } from '@/components/ui/dialog';
-import { Plus, Minus, Trash2, Printer, Search, Percent, DollarSign } from 'lucide-react';
+import { Plus, Minus, Trash2, Printer, Search, Percent, DollarSign, Users } from 'lucide-react';
 import { jsPDF } from 'jspdf';
 
 interface SessionWithOrders {
@@ -44,12 +44,7 @@ export default function LiveBillsPage() {
     const [loading, setLoading] = useState(true);
     const [menuItems, setMenuItems] = useState<MenuItem[]>([]);
     const [printers, setPrinters] = useState<any[]>([]);
-
-    // Add Item Modal
-    const [addItemModalOpen, setAddItemModalOpen] = useState(false);
     const [searchQuery, setSearchQuery] = useState('');
-    const [selectedMenuItem, setSelectedMenuItem] = useState<MenuItem | null>(null);
-    const [quantity, setQuantity] = useState(1);
 
     // Discount Modal
     const [discountModalOpen, setDiscountModalOpen] = useState(false);
@@ -65,6 +60,13 @@ export default function LiveBillsPage() {
     // Print Modal
     const [printModalOpen, setPrintModalOpen] = useState(false);
     const [selectedPrinter, setSelectedPrinter] = useState<string>('');
+
+    // Split Bill Modal
+    const [splitBillModalOpen, setSplitBillModalOpen] = useState(false);
+    const [splitMode, setSplitMode] = useState<'item' | 'amount'>('item');
+    const [splitPeopleCount, setSplitPeopleCount] = useState(2);
+    const [remainingItems, setRemainingItems] = useState<{ name: string; price: number; quantity: number; orderId: string }[]>([]);
+    const [selectedSplitItems, setSelectedSplitItems] = useState<{ name: string; price: number; quantity: number; orderId: string }[]>([]);
 
     useEffect(() => {
         if (restaurantId) {
@@ -147,7 +149,7 @@ export default function LiveBillsPage() {
             const sessionsQuery = query(
                 sessionsRef,
                 where('restaurantId', '==', restaurantId),
-                where('status', '==', 'active')
+                where('status', 'in', ['active', 'payment_pending'])
             );
             const sessionsSnapshot = await getDocs(sessionsQuery);
             const activeSessionIds = new Set<string>();
@@ -189,48 +191,6 @@ export default function LiveBillsPage() {
 
             setSessions(Array.from(sessionMap.values()));
         });
-    };
-
-    const handleAddItemToOrder = async () => {
-        if (!selectedSession || !selectedMenuItem) return;
-
-        try {
-            // Find the most recent order for this session
-            const latestOrder = selectedSession.orders.sort((a, b) =>
-                b.createdAt.getTime() - a.createdAt.getTime()
-            )[0];
-
-            const newItem: OrderItem = {
-                menuItemId: selectedMenuItem.id,
-                name: selectedMenuItem.name,
-                price: selectedMenuItem.price,
-                quantity,
-                category: selectedMenuItem.category,
-            }
-
-            const updatedItems = [...latestOrder.items, newItem];
-            const subtotal = updatedItems.reduce((sum, item) => sum + (item.price * item.quantity), 0);
-            const tax = subtotal * 0.08; // Assuming 8% tax
-            const discount = latestOrder.discount || 0;
-            const discountAmount = latestOrder.discountType === 'percentage'
-                ? (subtotal + tax) * (discount / 100)
-                : discount;
-            const total = subtotal + tax - discountAmount;
-
-            await updateDoc(doc(db, 'orders', latestOrder.id), {
-                items: updatedItems,
-                subtotal,
-                tax,
-                total,
-            });
-
-            setAddItemModalOpen(false);
-            setSelectedMenuItem(null);
-            setQuantity(1);
-            setSearchQuery('');
-        } catch (error) {
-            console.error('Error adding item:', error);
-        }
     };
 
     // Handler to update quantity for a specific item in an order
@@ -675,11 +635,34 @@ export default function LiveBillsPage() {
                                                 <Button
                                                     variant="outline"
                                                     size="sm"
-                                                    onClick={() => setAddItemModalOpen(true)}
-                                                    className="border-orange-200 hover:bg-orange-50"
+                                                    onClick={() => {
+                                                        // Initialize remaining items from all orders, consolidating duplicates
+                                                        const itemMap = new Map<string, { name: string; price: number; quantity: number; orderId: string }>();
+                                                        selectedSession.orders.forEach(order => {
+                                                            order.items.forEach(item => {
+                                                                const key = `${item.name}-${item.price}`;
+                                                                if (itemMap.has(key)) {
+                                                                    const existing = itemMap.get(key)!;
+                                                                    existing.quantity += item.quantity;
+                                                                } else {
+                                                                    itemMap.set(key, {
+                                                                        name: item.name,
+                                                                        price: item.price,
+                                                                        quantity: item.quantity,
+                                                                        orderId: order.id
+                                                                    });
+                                                                }
+                                                            });
+                                                        });
+                                                        setRemainingItems(Array.from(itemMap.values()));
+                                                        setSelectedSplitItems([]);
+                                                        setSplitMode('item');
+                                                        setSplitBillModalOpen(true);
+                                                    }}
+                                                    className="border-blue-200 hover:bg-blue-50"
                                                 >
-                                                    <Plus className="h-4 w-4 mr-2" />
-                                                    Add Item
+                                                    <Users className="h-4 w-4 mr-2" />
+                                                    Split Bill
                                                 </Button>
                                                 <Button
                                                     variant="outline"
@@ -861,70 +844,6 @@ export default function LiveBillsPage() {
                 )
             }
 
-            {/* Add Item Modal */}
-            <Dialog open={addItemModalOpen} onOpenChange={setAddItemModalOpen}>
-                <DialogContent className="max-w-2xl bg-white">
-                    <DialogHeader>
-                        <DialogTitle>Add Item to Order</DialogTitle>
-                        <DialogDescription>Search and select an item from the menu</DialogDescription>
-                    </DialogHeader>
-                    <div className="space-y-4">
-                        <div className="relative">
-                            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-muted-foreground h-4 w-4" />
-                            <Input
-                                placeholder="Search menu items..."
-                                value={searchQuery}
-                                onChange={(e) => setSearchQuery(e.target.value)}
-                                className="pl-10"
-                            />
-                        </div>
-                        <div className="max-h-96 overflow-y-auto space-y-2">
-                            {filteredMenuItems.map((item) => (
-                                <div
-                                    key={item.id}
-                                    className={`p-3 border rounded-lg cursor-pointer transition-colors ${selectedMenuItem?.id === item.id
-                                        ? 'border-orange-500 bg-orange-50'
-                                        : 'hover:bg-gray-50'
-                                        }`}
-                                    onClick={() => setSelectedMenuItem(item)}
-                                >
-                                    <div className="flex justify-between items-center">
-                                        <div>
-                                            <p className="font-medium">{item.name}</p>
-                                            <p className="text-sm text-muted-foreground">{item.category}</p>
-                                        </div>
-                                        <p className="font-semibold text-orange-600">€{item.price.toFixed(2)}</p>
-                                    </div>
-                                </div>
-                            ))}
-                        </div>
-                        {selectedMenuItem && (
-                            <div className="space-y-2">
-                                <Label>Quantity</Label>
-                                <Input
-                                    type="number"
-                                    min="1"
-                                    value={quantity}
-                                    onChange={(e) => setQuantity(parseInt(e.target.value) || 1)}
-                                />
-                            </div>
-                        )}
-                    </div>
-                    <DialogFooter>
-                        <Button variant="outline" onClick={() => setAddItemModalOpen(false)}>
-                            Cancel
-                        </Button>
-                        <Button
-                            onClick={handleAddItemToOrder}
-                            disabled={!selectedMenuItem}
-                            className="bg-gradient-to-r from-orange-500 to-red-500 hover:from-orange-600 hover:to-red-600 text-white"
-                        >
-                            Add Item
-                        </Button>
-                    </DialogFooter>
-                </DialogContent>
-            </Dialog>
-
             {/* Discount Modal */}
             <Dialog open={discountModalOpen} onOpenChange={setDiscountModalOpen}>
                 <DialogContent className="bg-white">
@@ -975,6 +894,420 @@ export default function LiveBillsPage() {
                             className="bg-gradient-to-r from-orange-500 to-red-500 hover:from-orange-600 hover:to-red-600 text-white"
                         >
                             Apply Discount
+                        </Button>
+                    </DialogFooter>
+                </DialogContent>
+            </Dialog>
+
+            {/* Split Bill Modal */}
+            <Dialog open={splitBillModalOpen} onOpenChange={setSplitBillModalOpen}>
+                <DialogContent className="max-w-6xl max-h-[90vh] overflow-hidden bg-white">
+                    <DialogHeader>
+                        <DialogTitle>Split Bill</DialogTitle>
+                        <DialogDescription>Choose how to split the bill</DialogDescription>
+                    </DialogHeader>
+
+                    {/* Tab Buttons */}
+                    <div className="flex gap-2 border-b pb-2">
+                        <Button
+                            variant={splitMode === 'item' ? 'default' : 'outline'}
+                            onClick={() => setSplitMode('item')}
+                            size="sm"
+                        >
+                            Split by Item
+                        </Button>
+                        <Button
+                            variant={splitMode === 'amount' ? 'default' : 'outline'}
+                            onClick={() => setSplitMode('amount')}
+                            size="sm"
+                        >
+                            Split by Amount
+                        </Button>
+                    </div>
+
+                    {splitMode === 'item' ? (
+                        /* Split by Item - 3 Column Layout */
+                        <div className="grid grid-cols-3 gap-4 h-[60vh]">
+                            {/* Left: Remaining Items */}
+                            <div className="border rounded-lg p-3 overflow-y-auto">
+                                <h3 className="font-semibold mb-2 text-sm">Remaining Items</h3>
+                                <div className="space-y-2">
+                                    {remainingItems.map((item, idx) => (
+                                        <div
+                                            key={idx}
+                                            className="flex justify-between items-center p-2 bg-gray-50 rounded"
+                                        >
+                                            <div className="flex-1">
+                                                <p className="text-sm font-medium">{item.name}</p>
+                                                <p className="text-xs text-muted-foreground">€{item.price.toFixed(2)} each</p>
+                                            </div>
+                                            <div className="flex items-center gap-2">
+                                                <span className="text-sm font-semibold w-6 text-center">{item.quantity}</span>
+                                                <Button
+                                                    variant="outline"
+                                                    size="icon"
+                                                    className="h-7 w-7"
+                                                    onClick={() => {
+                                                        // Move one to selected
+                                                        if (item.quantity > 1) {
+                                                            setRemainingItems(prev => prev.map((it, i) =>
+                                                                i === idx ? { ...it, quantity: it.quantity - 1 } : it
+                                                            ));
+                                                        } else {
+                                                            setRemainingItems(prev => prev.filter((_, i) => i !== idx));
+                                                        }
+                                                        const existing = selectedSplitItems.find(s => s.name === item.name && s.price === item.price);
+                                                        if (existing) {
+                                                            setSelectedSplitItems(prev => prev.map(s =>
+                                                                s.name === item.name && s.price === item.price
+                                                                    ? { ...s, quantity: s.quantity + 1 }
+                                                                    : s
+                                                            ));
+                                                        } else {
+                                                            setSelectedSplitItems(prev => [...prev, { ...item, quantity: 1 }]);
+                                                        }
+                                                    }}
+                                                >
+                                                    <Plus className="h-3 w-3" />
+                                                </Button>
+                                            </div>
+                                        </div>
+                                    ))}
+                                    {remainingItems.length === 0 && (
+                                        <p className="text-sm text-muted-foreground text-center py-4">All items selected</p>
+                                    )}
+                                </div>
+
+                                {/* Remaining Total */}
+                                {remainingItems.length > 0 && (
+                                    <div className="mt-4 pt-2 border-t">
+                                        <div className="flex justify-between font-bold text-sm">
+                                            <span>Remaining Total:</span>
+                                            <span>€{remainingItems.reduce((sum, it) => sum + it.price * it.quantity, 0).toFixed(2)}</span>
+                                        </div>
+                                    </div>
+                                )}
+                            </div>
+
+                            {/* Middle: Selected Items */}
+                            <div className="border rounded-lg p-3 overflow-y-auto bg-orange-50">
+                                <h3 className="font-semibold mb-2 text-sm">Selected for Payment</h3>
+                                <div className="space-y-2">
+                                    {selectedSplitItems.map((item, idx) => (
+                                        <div
+                                            key={idx}
+                                            className="flex justify-between items-center p-2 bg-white rounded"
+                                        >
+                                            <div className="flex items-center gap-2">
+                                                <Button
+                                                    variant="outline"
+                                                    size="icon"
+                                                    className="h-7 w-7"
+                                                    onClick={() => {
+                                                        // Move one back to remaining
+                                                        if (item.quantity > 1) {
+                                                            setSelectedSplitItems(prev => prev.map((it, i) =>
+                                                                i === idx ? { ...it, quantity: it.quantity - 1 } : it
+                                                            ));
+                                                        } else {
+                                                            setSelectedSplitItems(prev => prev.filter((_, i) => i !== idx));
+                                                        }
+                                                        const existing = remainingItems.find(s => s.name === item.name && s.price === item.price);
+                                                        if (existing) {
+                                                            setRemainingItems(prev => prev.map(s =>
+                                                                s.name === item.name && s.price === item.price
+                                                                    ? { ...s, quantity: s.quantity + 1 }
+                                                                    : s
+                                                            ));
+                                                        } else {
+                                                            setRemainingItems(prev => [...prev, { ...item, quantity: 1 }]);
+                                                        }
+                                                    }}
+                                                >
+                                                    <Minus className="h-3 w-3" />
+                                                </Button>
+                                                <span className="text-sm font-semibold w-6 text-center">{item.quantity}</span>
+                                            </div>
+                                            <div className="flex-1 ml-2">
+                                                <p className="text-sm font-medium">{item.name}</p>
+                                                <p className="text-xs text-muted-foreground">€{item.price.toFixed(2)} each</p>
+                                            </div>
+                                            <span className="text-sm font-semibold text-orange-600">€{(item.price * item.quantity).toFixed(2)}</span>
+                                        </div>
+                                    ))}
+                                    {selectedSplitItems.length === 0 && (
+                                        <p className="text-sm text-muted-foreground text-center py-4">Click + to add items</p>
+                                    )}
+                                </div>
+
+                                {/* Selected Total */}
+                                {selectedSplitItems.length > 0 && (
+                                    <div className="mt-4 pt-2 border-t">
+                                        <div className="flex justify-between font-bold">
+                                            <span>Subtotal:</span>
+                                            <span className="text-orange-600">
+                                                €{selectedSplitItems.reduce((sum, it) => sum + it.price * it.quantity, 0).toFixed(2)}
+                                            </span>
+                                        </div>
+                                    </div>
+                                )}
+                            </div>
+
+                            {/* Right: Full Bill Reference (Condensed) */}
+                            <div className="border rounded-lg p-3 overflow-y-auto bg-gray-50">
+                                <h3 className="font-semibold mb-2 text-sm">Full Bill Summary</h3>
+                                {selectedSession && (() => {
+                                    // Consolidate items
+                                    const itemMap = new Map<string, { name: string; qty: number; total: number }>();
+                                    selectedSession.orders.forEach(order => {
+                                        order.items.forEach(item => {
+                                            const key = `${item.name}-${item.price}`;
+                                            if (itemMap.has(key)) {
+                                                const existing = itemMap.get(key)!;
+                                                existing.qty += item.quantity;
+                                                existing.total += item.price * item.quantity;
+                                            } else {
+                                                itemMap.set(key, { name: item.name, qty: item.quantity, total: item.price * item.quantity });
+                                            }
+                                        });
+                                    });
+
+                                    const firstOrder = selectedSession.orders[0];
+                                    const subtotal = selectedSession.orders.reduce((sum, o) =>
+                                        sum + o.items.reduce((s, i) => s + i.price * i.quantity, 0), 0
+                                    );
+                                    const taxRate = firstOrder ? (firstOrder.tax / firstOrder.subtotal) : 0.10;
+                                    const tax = subtotal * taxRate;
+                                    const discount = firstOrder?.discount || 0;
+                                    const discountAmount = firstOrder?.discountType === 'percentage'
+                                        ? (subtotal + tax) * (discount / 100) : discount;
+                                    const total = subtotal + tax - discountAmount;
+
+                                    return (
+                                        <>
+                                            <div className="space-y-1 max-h-[40%] overflow-y-auto">
+                                                {Array.from(itemMap.values()).map((item, idx) => (
+                                                    <div key={idx} className="flex justify-between text-xs py-1 border-b border-gray-200">
+                                                        <span>{item.name} x{item.qty}</span>
+                                                        <span>€{item.total.toFixed(2)}</span>
+                                                    </div>
+                                                ))}
+                                            </div>
+                                            <div className="mt-3 pt-2 border-t space-y-1 text-xs">
+                                                <div className="flex justify-between">
+                                                    <span>Subtotal:</span>
+                                                    <span>€{subtotal.toFixed(2)}</span>
+                                                </div>
+                                                <div className="flex justify-between">
+                                                    <span>Tax ({(taxRate * 100).toFixed(0)}%):</span>
+                                                    <span>€{tax.toFixed(2)}</span>
+                                                </div>
+                                                {discount > 0 && (
+                                                    <div className="flex justify-between text-green-600">
+                                                        <span>Discount:</span>
+                                                        <span>-€{discountAmount.toFixed(2)}</span>
+                                                    </div>
+                                                )}
+                                                <div className="flex justify-between font-bold text-sm pt-1 border-t">
+                                                    <span>Total:</span>
+                                                    <span>€{total.toFixed(2)}</span>
+                                                </div>
+                                            </div>
+                                        </>
+                                    );
+                                })()}
+                            </div>
+                        </div>
+                    ) : (
+                        /* Split by Amount */
+                        <div className="py-6">
+                            <div className="max-w-md mx-auto space-y-6">
+                                <div className="space-y-2">
+                                    <Label>Number of People</Label>
+                                    <div className="flex gap-2 items-center">
+                                        <Button
+                                            variant="outline"
+                                            size="icon"
+                                            onClick={() => setSplitPeopleCount(Math.max(2, splitPeopleCount - 1))}
+                                        >
+                                            <Minus className="h-4 w-4" />
+                                        </Button>
+                                        <Input
+                                            type="number"
+                                            min="2"
+                                            value={splitPeopleCount}
+                                            onChange={(e) => setSplitPeopleCount(Math.max(2, parseInt(e.target.value) || 2))}
+                                            className="w-20 text-center"
+                                        />
+                                        <Button
+                                            variant="outline"
+                                            size="icon"
+                                            onClick={() => setSplitPeopleCount(splitPeopleCount + 1)}
+                                        >
+                                            <Plus className="h-4 w-4" />
+                                        </Button>
+                                    </div>
+                                </div>
+
+                                {selectedSession && (() => {
+                                    const totalAmount = selectedSession.orders.reduce((sum, order) =>
+                                        sum + order.items.reduce((s, i) => s + i.price * i.quantity, 0), 0
+                                    );
+                                    const splitAmount = totalAmount / splitPeopleCount;
+
+                                    return (
+                                        <div className="bg-orange-50 p-4 rounded-lg space-y-2">
+                                            <div className="flex justify-between text-sm">
+                                                <span>Total Bill:</span>
+                                                <span className="font-bold">€{totalAmount.toFixed(2)}</span>
+                                            </div>
+                                            <div className="flex justify-between text-sm">
+                                                <span>Split between:</span>
+                                                <span className="font-bold">{splitPeopleCount} people</span>
+                                            </div>
+                                            <div className="flex justify-between text-lg font-bold border-t pt-2">
+                                                <span>Each person pays:</span>
+                                                <span className="text-orange-600">€{splitAmount.toFixed(2)}</span>
+                                            </div>
+                                        </div>
+                                    );
+                                })()}
+                            </div>
+                        </div>
+                    )}
+
+                    <DialogFooter>
+                        <Button variant="outline" onClick={() => setSplitBillModalOpen(false)}>
+                            Cancel
+                        </Button>
+                        <Button
+                            onClick={() => {
+                                if (!selectedSession) return;
+
+                                const pdf = new jsPDF();
+                                let yPos = 20;
+
+                                // Get original bill info
+                                const firstOrder = selectedSession.orders[0];
+                                const originalSubtotal = selectedSession.orders.reduce((sum, o) =>
+                                    sum + o.items.reduce((s, i) => s + i.price * i.quantity, 0), 0
+                                );
+                                const taxRate = firstOrder ? (firstOrder.tax / firstOrder.subtotal) || 0.10 : 0.10;
+                                const discount = firstOrder?.discount || 0;
+                                const discountType = firstOrder?.discountType || 'percentage';
+
+                                // Get tip percentage from session
+                                const sessionData = selectedSession as any;
+                                const tipPercentage = sessionData.tipPercentage ||
+                                    (sessionData.tipAmount && originalSubtotal > 0
+                                        ? (sessionData.tipAmount / originalSubtotal) * 100
+                                        : 0);
+
+                                if (splitMode === 'item' && selectedSplitItems.length > 0) {
+                                    // Split by item
+                                    const splitSubtotal = selectedSplitItems.reduce((sum, it) => sum + it.price * it.quantity, 0);
+                                    const splitTax = splitSubtotal * taxRate;
+                                    const splitDiscount = discountType === 'percentage'
+                                        ? (splitSubtotal + splitTax) * (discount / 100)
+                                        : (discount * splitSubtotal / originalSubtotal);
+                                    const splitTip = splitSubtotal * (tipPercentage / 100);
+                                    const splitTotal = splitSubtotal + splitTax - splitDiscount + splitTip;
+
+                                    pdf.setFontSize(16);
+                                    pdf.text('Split Bill', 105, yPos, { align: 'center' });
+                                    yPos += 10;
+                                    pdf.setFontSize(10);
+                                    pdf.text(`Table: ${selectedSession.tableName}`, 20, yPos);
+                                    yPos += 15;
+
+                                    pdf.line(20, yPos, 190, yPos);
+                                    yPos += 8;
+
+                                    selectedSplitItems.forEach(item => {
+                                        pdf.text(`${item.name} x${item.quantity}`, 20, yPos);
+                                        pdf.text(`€${(item.price * item.quantity).toFixed(2)}`, 180, yPos, { align: 'right' });
+                                        yPos += 6;
+                                    });
+
+                                    yPos += 5;
+                                    pdf.line(20, yPos, 190, yPos);
+                                    yPos += 8;
+
+                                    pdf.text('Subtotal:', 120, yPos);
+                                    pdf.text(`€${splitSubtotal.toFixed(2)}`, 180, yPos, { align: 'right' });
+                                    yPos += 6;
+
+                                    pdf.text(`Tax (${(taxRate * 100).toFixed(0)}%):`, 120, yPos);
+                                    pdf.text(`€${splitTax.toFixed(2)}`, 180, yPos, { align: 'right' });
+                                    yPos += 6;
+
+                                    if (splitDiscount > 0) {
+                                        pdf.text('Discount:', 120, yPos);
+                                        pdf.text(`-€${splitDiscount.toFixed(2)}`, 180, yPos, { align: 'right' });
+                                        yPos += 6;
+                                    }
+
+                                    if (splitTip > 0) {
+                                        pdf.text(`Tip (${tipPercentage.toFixed(1)}%):`, 120, yPos);
+                                        pdf.text(`€${splitTip.toFixed(2)}`, 180, yPos, { align: 'right' });
+                                        yPos += 6;
+                                    }
+
+                                    pdf.setFontSize(12);
+                                    pdf.text('TOTAL:', 120, yPos + 3);
+                                    pdf.text(`€${splitTotal.toFixed(2)}`, 180, yPos + 3, { align: 'right' });
+
+                                    pdf.save(`split-bill-${selectedSession.tableName}-${Date.now()}.pdf`);
+                                    setSelectedSplitItems([]);
+
+                                } else if (splitMode === 'amount' && selectedSession) {
+                                    // Split by amount
+                                    const tax = originalSubtotal * taxRate;
+                                    const discountAmount = discountType === 'percentage'
+                                        ? (originalSubtotal + tax) * (discount / 100) : discount;
+                                    const tip = originalSubtotal * (tipPercentage / 100);
+                                    const total = originalSubtotal + tax - discountAmount + tip;
+                                    const splitAmount = total / splitPeopleCount;
+
+                                    pdf.setFontSize(16);
+                                    pdf.text(`Split Bill (1/${splitPeopleCount})`, 105, yPos, { align: 'center' });
+                                    yPos += 10;
+                                    pdf.setFontSize(10);
+                                    pdf.text(`Table: ${selectedSession.tableName}`, 20, yPos);
+                                    yPos += 15;
+
+                                    pdf.line(20, yPos, 190, yPos);
+                                    yPos += 8;
+
+                                    // Show all items
+                                    selectedSession.orders.forEach(order => {
+                                        order.items.forEach(item => {
+                                            pdf.text(`${item.name} x${item.quantity}`, 20, yPos);
+                                            pdf.text(`€${(item.price * item.quantity).toFixed(2)}`, 180, yPos, { align: 'right' });
+                                            yPos += 6;
+                                        });
+                                    });
+
+                                    yPos += 5;
+                                    pdf.line(20, yPos, 190, yPos);
+                                    yPos += 8;
+
+                                    pdf.text('Full Total:', 120, yPos);
+                                    pdf.text(`€${total.toFixed(2)}`, 180, yPos, { align: 'right' });
+                                    yPos += 8;
+
+                                    pdf.setFontSize(14);
+                                    pdf.text(`TOTAL (Split ÷ ${splitPeopleCount}):`, 100, yPos + 3);
+                                    pdf.text(`€${splitAmount.toFixed(2)}`, 180, yPos + 3, { align: 'right' });
+
+                                    pdf.save(`split-bill-${selectedSession.tableName}-per-person-${Date.now()}.pdf`);
+                                }
+                            }}
+                            className="bg-gradient-to-r from-orange-500 to-red-500 hover:from-orange-600 hover:to-red-600 text-white"
+                            disabled={splitMode === 'item' && selectedSplitItems.length === 0}
+                        >
+                            <Printer className="h-4 w-4 mr-2" />
+                            Print Split Bill
                         </Button>
                     </DialogFooter>
                 </DialogContent>

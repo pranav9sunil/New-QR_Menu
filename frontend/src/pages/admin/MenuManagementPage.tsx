@@ -696,17 +696,29 @@ export default function MenuManagementPage() {
                         <div className="grid grid-cols-2 gap-4">
                             <div className="space-y-2">
                                 <Label htmlFor="category">Category</Label>
-                                <Input
+                                <select
                                     id="category"
                                     value={formData.category}
                                     onChange={(e) => setFormData({ ...formData, category: e.target.value })}
                                     required
-                                    placeholder="e.g., Appetizers"
-                                    list="categories-list"
-                                />
-                                <datalist id="categories-list">
-                                    {categoryOrder.map(c => <option key={c} value={c} />)}
-                                </datalist>
+                                    className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+                                >
+                                    <option value="">Select a category...</option>
+                                    <option value="Starters">Starters</option>
+                                    <option value="Tandoori Starters">Tandoori Starters</option>
+                                    <option value="Vegetarians">Vegetarians</option>
+                                    <option value="Chicken">Chicken</option>
+                                    <option value="Lamb/Mutton">Lamb/Mutton</option>
+                                    <option value="Fish">Fish</option>
+                                    <option value="Rice">Rice</option>
+                                    <option value="Breads">Breads</option>
+                                    <option value="Biriyani's">Biriyani's</option>
+                                    <option value="Thali's">Thali's</option>
+                                    <option value="Soups">Soups</option>
+                                    <option value="Extras">Extras</option>
+                                    <option value="Desserts">Desserts</option>
+                                    <option value="Drinks">Drinks</option>
+                                </select>
                             </div>
                             <div className="space-y-2">
                                 <Label htmlFor="subcategory">Subcategory (Optional)</Label>
