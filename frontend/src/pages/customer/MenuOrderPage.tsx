@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { toast } from 'sonner';
 import { useSearchParams, useNavigate } from 'react-router-dom';
 import { db } from '@/config/firebase';
 import {
@@ -17,7 +18,7 @@ import type { MenuItem, CartItem, Order } from '@/types';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card, CardContent } from '@/components/ui/card';
-import { ChefHat, ShoppingCart, Plus, Minus, Trash2, Receipt, Download, Search, History, CheckCircle2, ChevronDown, ChevronRight, X, Banknote, Users, CreditCard } from 'lucide-react';
+import { ChefHat, ShoppingCart, Plus, Minus, Trash2, Receipt, Download, Search, History, CheckCircle2, ChevronDown, ChevronRight, X, Banknote, CreditCard } from 'lucide-react';
 import { jsPDF } from 'jspdf';
 import {
     Dialog,
@@ -108,6 +109,16 @@ const MenuItemRow = ({ item, onAdd, showDivider }: { item: MenuItem, onAdd: (ite
                         {item.dietary?.includes('gluten-free') && (
                             <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs bg-amber-50 text-amber-700 border border-amber-200">
                                 🌾 Gluten-Free
+                            </span>
+                        )}
+                        {item.dietary?.includes('dairy') && (
+                            <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs bg-blue-50 text-blue-700 border border-blue-200">
+                                🥛 Dairy
+                            </span>
+                        )}
+                        {item.dietary?.includes('gluten') && (
+                            <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs bg-yellow-50 text-yellow-700 border border-yellow-200">
+                                🍞 Gluten
                             </span>
                         )}
                         {/* Spice Level */}
@@ -230,12 +241,11 @@ export default function MenuOrderPage() {
     const [sessionTipAmount, setSessionTipAmount] = useState(0);
 
     // Payment type state
-    const [paymentTypeModalOpen, setPaymentTypeModalOpen] = useState(false);
+    // Payment type state
     const [paymentMethodModalOpen, setPaymentMethodModalOpen] = useState(false);
-    const [, setSelectedPaymentType] = useState<'full' | 'split' | null>(null);
     const [, setSelectedPaymentMethod] = useState<'cash' | 'card' | null>(null);
 
-    // Helper to get localized category name
+    // Helper to get localized subcategory name
     const getLocalizedCategory = (category: string): string => {
         if (language === 'es' && categoryTranslations[category]?.es) {
             return categoryTranslations[category].es;
@@ -243,13 +253,42 @@ export default function MenuOrderPage() {
         return category;
     };
 
-    // Helper to get localized subcategory name
     const getLocalizedSubcategory = (category: string, subcategory: string): string => {
         const key = `${category}:${subcategory}`;
         if (language === 'es' && subcategoryTranslations[key]?.es) {
             return subcategoryTranslations[key].es;
         }
         return subcategory;
+    };
+
+    // HISTORY MANAGEMENT FOR MOBILE BACK BUTTON
+    useEffect(() => {
+        if (customizationModalOpen) {
+            // Push state when modal opens
+            window.history.pushState({ modal: 'customization' }, '', window.location.href);
+
+            const handlePopState = () => {
+                // When back button is pressed, close the modal
+                setCustomizationModalOpen(false);
+                setSelectedItem(null);
+            };
+
+            window.addEventListener('popstate', handlePopState);
+
+            return () => {
+                window.removeEventListener('popstate', handlePopState);
+            };
+        }
+    }, [customizationModalOpen]);
+
+    const handleModalOpenChange = (open: boolean) => {
+        if (open) {
+            setCustomizationModalOpen(true);
+        } else {
+            // Trigger back navigation to close modal via popstate
+            // Check if we have history state to pop
+            window.history.back();
+        }
     };
 
     useEffect(() => {
@@ -435,12 +474,12 @@ export default function MenuOrderPage() {
                 tipPercentage: null
             });
 
-            alert('Order placed successfully!');
+            toast.success('Order placed successfully!');
             setCart([]);
             setCartOpen(false);
         } catch (error) {
             console.error('Error placing order:', error);
-            alert('Failed to place order. Please try again.');
+            toast.error('Failed to place order. Please try again.');
         } finally {
             setPlacingOrder(false);
         }
@@ -500,8 +539,8 @@ export default function MenuOrderPage() {
         };
 
         addToCart(customItem);
-        setCustomizationModalOpen(false);
-        setSelectedItem(null);
+        // Go back in history to close modal (matches useEffect logic)
+        window.history.back();
     };
 
     const handleFetchPastOrders = async () => {
@@ -543,29 +582,16 @@ export default function MenuOrderPage() {
             setTipDialogOpen(true);
         } catch (error) {
             console.error('Error fetching orders for bill:', error);
-            alert('Failed to load bill information');
+            toast.error('Failed to load bill information');
         } finally {
             setLoading(false);
         }
     };
 
     const handleConfirmBillWithTip = async () => {
-        // Close tip dialog and open payment type selection
+        // Close tip dialog and open payment method selection
         setTipDialogOpen(false);
-        setPaymentTypeModalOpen(true);
-    };
-
-    const handlePaymentTypeSelect = (type: 'full' | 'split') => {
-        setSelectedPaymentType(type);
-        setPaymentTypeModalOpen(false);
-
-        if (type === 'full') {
-            // Show payment method selection for Pay in Full
-            setPaymentMethodModalOpen(true);
-        } else {
-            // For split payment, submit directly with split type
-            handleFinalBillSubmit('split', null);
-        }
+        setPaymentMethodModalOpen(true);
     };
 
     const handlePaymentMethodSelect = (method: 'cash' | 'card') => {
@@ -587,7 +613,6 @@ export default function MenuOrderPage() {
             });
 
             // Reset all payment states
-            setSelectedPaymentType(null);
             setSelectedPaymentMethod(null);
             setSelectedTipPercentage(null);
             setCustomTipAmount('');
@@ -596,10 +621,10 @@ export default function MenuOrderPage() {
             const methodText = paymentType === 'split'
                 ? 'Split Payment'
                 : (paymentMethod === 'cash' ? 'Cash' : 'Card');
-            alert(`Server notified! Payment method: ${methodText}. Your bill is on the way.`);
+            toast.success(`Server notified! Payment method: ${methodText}. Your bill is on the way.`);
         } catch (error) {
             console.error('Error requesting bill:', error);
-            alert('Failed to request bill');
+            toast.error('Failed to request bill');
         }
     };
 
@@ -1174,7 +1199,7 @@ export default function MenuOrderPage() {
             </Dialog>
 
             {/* Item Detail & Customization Modal */}
-            <Dialog open={customizationModalOpen} onOpenChange={setCustomizationModalOpen}>
+            <Dialog open={customizationModalOpen} onOpenChange={handleModalOpenChange}>
                 <DialogContent className="max-w-lg max-h-[90vh] flex flex-col bg-white p-0 gap-0 overflow-hidden" hideClose>
                     {selectedItem && (
                         <>
@@ -1589,34 +1614,6 @@ export default function MenuOrderPage() {
                             Confirm & Request Bill
                         </Button>
                     </DialogFooter>
-                </DialogContent>
-            </Dialog>
-
-            {/* Payment Type Modal */}
-            <Dialog open={paymentTypeModalOpen} onOpenChange={setPaymentTypeModalOpen}>
-                <DialogContent className="bg-white max-w-md">
-                    <DialogHeader>
-                        <DialogTitle>Payment Type</DialogTitle>
-                        <DialogDescription>How would you like to pay?</DialogDescription>
-                    </DialogHeader>
-                    <div className="grid grid-cols-2 gap-4 py-6">
-                        <Button
-                            variant="outline"
-                            className="h-24 flex flex-col items-center justify-center gap-2 border-2 hover:border-green-500 hover:bg-green-50"
-                            onClick={() => handlePaymentTypeSelect('full')}
-                        >
-                            <Banknote className="h-8 w-8 text-green-600" />
-                            <span className="font-semibold">Pay in Full</span>
-                        </Button>
-                        <Button
-                            variant="outline"
-                            className="h-24 flex flex-col items-center justify-center gap-2 border-2 hover:border-orange-500 hover:bg-orange-50"
-                            onClick={() => handlePaymentTypeSelect('split')}
-                        >
-                            <Users className="h-8 w-8 text-orange-600" />
-                            <span className="font-semibold">Split Payment</span>
-                        </Button>
-                    </div>
                 </DialogContent>
             </Dialog>
 

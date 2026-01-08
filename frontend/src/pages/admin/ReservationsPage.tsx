@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { toast } from 'sonner';
 import { useAuth } from '@/contexts/AuthContext';
 import { db } from '@/config/firebase';
 import {
@@ -46,6 +47,7 @@ export default function ReservationsPage() {
     // Form state
     const [customerName, setCustomerName] = useState('');
     const [phone, setPhone] = useState('');
+    const [guests, setGuests] = useState(2);
     const [reservationDate, setReservationDate] = useState('');
     const [reservationTime, setReservationTime] = useState('');
     const [selectedTableId, setSelectedTableId] = useState<string>('none');
@@ -169,12 +171,34 @@ export default function ReservationsPage() {
 
     const handleSubmit = async () => {
         if (!restaurantId || !customerName.trim() || !phone.trim() || !reservationDate || !reservationTime) {
-            alert('Please fill in all required fields');
+            toast.error('Please fill in all required fields');
             return;
         }
 
         const dateTime = new Date(`${reservationDate}T${reservationTime}`);
         const selectedTable = tables.find((t) => t.id === selectedTableId);
+
+        // Conflict Check
+        // Only check if a table is selected and the reservation is not cancelled
+        if (selectedTableId !== 'none' && status !== 'cancelled') {
+            const conflict = reservations.find(res => {
+                if (res.status === 'cancelled') return false;
+                if (editingReservation && res.id === editingReservation.id) return false;
+                if (res.tableId !== selectedTableId) return false;
+
+                const resTime = new Date(res.dateTime);
+                const timeDiff = Math.abs(resTime.getTime() - dateTime.getTime());
+                const oneHourInMs = 60 * 60 * 1000;
+
+                return timeDiff < oneHourInMs; // Conflict if < 1 hour difference
+            });
+
+            if (conflict) {
+                const conflictTime = new Date(conflict.dateTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+                toast.error(`Conflict: Table ${conflict.tableName} is already reserved around ${conflictTime} (by ${conflict.customerName}). Please choose a different time or table.`);
+                return;
+            }
+        }
 
         const reservationData = {
             restaurantId,
@@ -200,7 +224,7 @@ export default function ReservationsPage() {
             resetForm();
         } catch (error) {
             console.error('Error saving reservation:', error);
-            alert('Failed to save reservation');
+            toast.error('Failed to save reservation');
         }
     };
 
@@ -211,7 +235,7 @@ export default function ReservationsPage() {
             await deleteDoc(doc(db, 'reservations', id));
         } catch (error) {
             console.error('Error deleting reservation:', error);
-            alert('Failed to delete reservation');
+            toast.error('Failed to delete reservation');
         }
     };
 
@@ -478,6 +502,17 @@ export default function ReservationsPage() {
                                 value={notes}
                                 onChange={(e) => setNotes(e.target.value)}
                                 placeholder="Special requests, dietary needs, etc."
+                            />
+                        </div>
+
+                        <div>
+                            <Label htmlFor="guests">Number of Guests</Label>
+                            <Input
+                                id="guests"
+                                type="number"
+                                min={1}
+                                value={guests}
+                                onChange={(e) => setGuests(parseInt(e.target.value) || 2)}
                             />
                         </div>
                     </div>

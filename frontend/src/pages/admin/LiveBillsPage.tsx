@@ -186,7 +186,12 @@ export default function LiveBillsPage() {
                 }
                 const session = sessionMap.get(sessionId)!;
                 session.orders.push(order);
-                session.totalAmount += order.total;
+                const orderSubtotal = order.items.reduce((s, i) => s + i.price * (i.quantity - (i.paidQuantity || 0)), 0);
+                const orderTax = orderSubtotal * 0.08;
+                const orderDiscount = order.discountType === 'percentage'
+                    ? (orderSubtotal + orderTax) * ((order.discount || 0) / 100)
+                    : (order.discount || 0);
+                session.totalAmount += Math.max(0, orderSubtotal + orderTax - orderDiscount);
             }
 
             setSessions(Array.from(sessionMap.values()));
@@ -419,10 +424,13 @@ export default function LiveBillsPage() {
 
             for (const order of selectedSession.orders) {
                 for (const item of order.items) {
+                    const remainingQty = item.quantity - (item.paidQuantity || 0);
+                    if (remainingQty <= 0) continue;
+
                     pdf.text(item.name, 20, yPos);
-                    pdf.text(item.quantity.toString(), 120, yPos);
+                    pdf.text(remainingQty.toString(), 120, yPos);
                     pdf.text(`€${item.price.toFixed(2)}`, 150, yPos);
-                    pdf.text(`€${(item.price * item.quantity).toFixed(2)}`, 180, yPos);
+                    pdf.text(`€${(item.price * remainingQty).toFixed(2)}`, 180, yPos);
                     yPos += 7;
                 }
             }
@@ -432,12 +440,15 @@ export default function LiveBillsPage() {
             yPos += 10;
 
             const firstOrder = selectedSession.orders[0];
-            const subtotal = selectedSession.orders.reduce((sum, order) => sum + order.subtotal, 0);
-            const tax = selectedSession.orders.reduce((sum, order) => sum + order.tax, 0);
+            const subtotal = selectedSession.orders.reduce((sum, o) =>
+                sum + o.items.reduce((s, i) => s + i.price * (i.quantity - (i.paidQuantity || 0)), 0), 0
+            );
+            const tax = subtotal * 0.08;
             const discount = firstOrder.discount || 0;
             const discountAmount = firstOrder.discountType === 'percentage'
                 ? (subtotal + tax) * (discount / 100)
                 : discount;
+            const total = Math.max(0, subtotal + tax - discountAmount);
 
             pdf.text('Subtotal:', 140, yPos);
             pdf.text(`€${subtotal.toFixed(2)}`, 180, yPos);
@@ -455,7 +466,7 @@ export default function LiveBillsPage() {
             yPos += 5;
             pdf.setFontSize(14);
             pdf.text(`Total:`, 120, yPos);
-            pdf.text(`€${selectedSession.totalAmount.toFixed(2)}`, 180, yPos);
+            pdf.text(`€${total.toFixed(2)}`, 180, yPos);
 
             // Download PDF (no order status changes)
             pdf.save(`bill-${selectedSession.tableName}-${Date.now()}.pdf`);
@@ -495,10 +506,13 @@ export default function LiveBillsPage() {
 
             for (const order of selectedSession.orders) {
                 for (const item of order.items) {
+                    const remainingQty = item.quantity - (item.paidQuantity || 0);
+                    if (remainingQty <= 0) continue;
+
                     pdf.text(item.name, 20, yPos);
-                    pdf.text(item.quantity.toString(), 120, yPos);
+                    pdf.text(remainingQty.toString(), 120, yPos);
                     pdf.text(`€${item.price.toFixed(2)}`, 150, yPos);
-                    pdf.text(`€${(item.price * item.quantity).toFixed(2)}`, 180, yPos);
+                    pdf.text(`€${(item.price * remainingQty).toFixed(2)}`, 180, yPos);
                     yPos += 7;
                 }
             }
@@ -508,16 +522,20 @@ export default function LiveBillsPage() {
             yPos += 10;
 
             const firstOrder = selectedSession.orders[0];
-            const subtotal = selectedSession.orders.reduce((sum, order) => sum + order.subtotal, 0);
-            const tax = selectedSession.orders.reduce((sum, order) => sum + order.tax, 0);
+            const subtotal = selectedSession.orders.reduce((sum, o) =>
+                sum + o.items.reduce((s, i) => s + i.price * (i.quantity - (i.paidQuantity || 0)), 0), 0
+            );
+            const tax = subtotal * 0.08; // Assuming 8%
             const discount = firstOrder.discount || 0;
             const discountAmount = firstOrder.discountType === 'percentage'
                 ? (subtotal + tax) * (discount / 100)
                 : discount;
+            const total = Math.max(0, subtotal + tax - discountAmount);
 
             pdf.text('Subtotal:', 140, yPos);
             pdf.text(`€${subtotal.toFixed(2)}`, 180, yPos);
             yPos += 7;
+            pdf.text('Tax (8%):', 140, yPos);
             pdf.text(`€${tax.toFixed(2)}`, 180, yPos);
             yPos += 7;
 
@@ -530,7 +548,7 @@ export default function LiveBillsPage() {
             yPos += 5;
             pdf.setFontSize(14);
             pdf.text(`Total:`, 120, yPos);
-            pdf.text(`€${selectedSession.totalAmount.toFixed(2)}`, 180, yPos);
+            pdf.text(`€${total.toFixed(2)}`, 180, yPos);
 
             // Download PDF
             pdf.save(`bill-${selectedSession.tableName}-${Date.now()}.pdf`);
@@ -640,15 +658,18 @@ export default function LiveBillsPage() {
                                                         const itemMap = new Map<string, { name: string; price: number; quantity: number; orderId: string }>();
                                                         selectedSession.orders.forEach(order => {
                                                             order.items.forEach(item => {
+                                                                const remainingQty = item.quantity - (item.paidQuantity || 0);
+                                                                if (remainingQty <= 0) return;
+
                                                                 const key = `${item.name}-${item.price}`;
                                                                 if (itemMap.has(key)) {
                                                                     const existing = itemMap.get(key)!;
-                                                                    existing.quantity += item.quantity;
+                                                                    existing.quantity += remainingQty;
                                                                 } else {
                                                                     itemMap.set(key, {
                                                                         name: item.name,
                                                                         price: item.price,
-                                                                        quantity: item.quantity,
+                                                                        quantity: remainingQty,
                                                                         orderId: order.id
                                                                     });
                                                                 }
@@ -720,18 +741,21 @@ export default function LiveBillsPage() {
 
                                             selectedSession.orders.forEach(order => {
                                                 order.items.forEach((item, itemIndex) => {
+                                                    const remainingQty = item.quantity - (item.paidQuantity || 0);
+                                                    if (remainingQty <= 0) return;
+
                                                     const customizationsKey = item.selectedCustomizations?.map(c => c.name).sort().join(',') || '';
                                                     const existingIndex = consolidatedItems.findIndex(
                                                         ci => ci.name === item.name && ci.price === item.price && ci.customizations === customizationsKey
                                                     );
 
                                                     if (existingIndex >= 0) {
-                                                        consolidatedItems[existingIndex].quantity += item.quantity;
+                                                        consolidatedItems[existingIndex].quantity += remainingQty;
                                                     } else {
                                                         consolidatedItems.push({
                                                             name: item.name,
                                                             price: item.price,
-                                                            quantity: item.quantity,
+                                                            quantity: remainingQty,
                                                             orderId: order.id,
                                                             originalItemIndex: itemIndex,
                                                             customizations: customizationsKey
@@ -1057,24 +1081,27 @@ export default function LiveBillsPage() {
                             <div className="border rounded-lg p-3 overflow-y-auto bg-gray-50">
                                 <h3 className="font-semibold mb-2 text-sm">Full Bill Summary</h3>
                                 {selectedSession && (() => {
-                                    // Consolidate items
+                                    // Consolidate remaining items
                                     const itemMap = new Map<string, { name: string; qty: number; total: number }>();
                                     selectedSession.orders.forEach(order => {
                                         order.items.forEach(item => {
+                                            const remainingQty = item.quantity - (item.paidQuantity || 0);
+                                            if (remainingQty <= 0) return;
+
                                             const key = `${item.name}-${item.price}`;
                                             if (itemMap.has(key)) {
                                                 const existing = itemMap.get(key)!;
-                                                existing.qty += item.quantity;
-                                                existing.total += item.price * item.quantity;
+                                                existing.qty += remainingQty;
+                                                existing.total += item.price * remainingQty;
                                             } else {
-                                                itemMap.set(key, { name: item.name, qty: item.quantity, total: item.price * item.quantity });
+                                                itemMap.set(key, { name: item.name, qty: remainingQty, total: item.price * remainingQty });
                                             }
                                         });
                                     });
 
                                     const firstOrder = selectedSession.orders[0];
                                     const subtotal = selectedSession.orders.reduce((sum, o) =>
-                                        sum + o.items.reduce((s, i) => s + i.price * i.quantity, 0), 0
+                                        sum + o.items.reduce((s, i) => s + i.price * (i.quantity - (i.paidQuantity || 0)), 0), 0
                                     );
                                     const taxRate = firstOrder ? (firstOrder.tax / firstOrder.subtotal) : 0.10;
                                     const tax = subtotal * taxRate;
@@ -1181,16 +1208,16 @@ export default function LiveBillsPage() {
                             Cancel
                         </Button>
                         <Button
-                            onClick={() => {
+                            onClick={async () => {
                                 if (!selectedSession) return;
 
                                 const pdf = new jsPDF();
                                 let yPos = 20;
 
-                                // Get original bill info
+                                // Get original bill info (adjusted for remaining items)
                                 const firstOrder = selectedSession.orders[0];
                                 const originalSubtotal = selectedSession.orders.reduce((sum, o) =>
-                                    sum + o.items.reduce((s, i) => s + i.price * i.quantity, 0), 0
+                                    sum + o.items.reduce((s, i) => s + i.price * (i.quantity - (i.paidQuantity || 0)), 0), 0
                                 );
                                 const taxRate = firstOrder ? (firstOrder.tax / firstOrder.subtotal) || 0.10 : 0.10;
                                 const discount = firstOrder?.discount || 0;
@@ -1258,10 +1285,61 @@ export default function LiveBillsPage() {
                                     pdf.text(`€${splitTotal.toFixed(2)}`, 180, yPos + 3, { align: 'right' });
 
                                     pdf.save(`split-bill-${selectedSession.tableName}-${Date.now()}.pdf`);
+
+                                    // UPDATE BACKEND - Mark items as paid
+                                    try {
+                                        const updates = new Map<string, Order>();
+
+                                        for (const splitItem of selectedSplitItems) {
+                                            let qtyToMark = splitItem.quantity;
+
+                                            // Find relevant orders and update items
+                                            for (const order of selectedSession.orders) {
+                                                if (qtyToMark <= 0) break;
+
+                                                // Deep copy order for modification check
+                                                const orderUpdates = updates.get(order.id) || JSON.parse(JSON.stringify(order));
+                                                let orderModified = false;
+
+                                                orderUpdates.items.forEach((item: any) => {
+                                                    if (qtyToMark <= 0) return;
+                                                    // Match item by name and price (and customs if we were tracking them perfectly, but strict name/price is standard here)
+                                                    if (item.name === splitItem.name && item.price === splitItem.price) {
+                                                        const available = item.quantity - (item.paidQuantity || 0);
+                                                        const take = Math.min(available, qtyToMark);
+
+                                                        if (take > 0) {
+                                                            item.paidQuantity = (item.paidQuantity || 0) + take;
+                                                            qtyToMark -= take;
+                                                            orderModified = true;
+                                                        }
+                                                    }
+                                                });
+
+                                                if (orderModified) {
+                                                    updates.set(order.id, orderUpdates);
+                                                }
+                                            }
+                                        }
+
+                                        // Commit updates
+                                        const batchPromises = [];
+                                        for (const [orderId, updatedOrder] of updates) {
+                                            batchPromises.push(updateDoc(doc(db, 'orders', orderId), {
+                                                items: updatedOrder.items
+                                            }));
+                                        }
+                                        await Promise.all(batchPromises);
+
+                                    } catch (e) {
+                                        console.error("Error updating split quantities:", e);
+                                        alert("Bill printed, but failed to update system records.");
+                                    }
+
                                     setSelectedSplitItems([]);
 
                                 } else if (splitMode === 'amount' && selectedSession) {
-                                    // Split by amount
+                                    // Split by amount logic (unchanged)
                                     const tax = originalSubtotal * taxRate;
                                     const discountAmount = discountType === 'percentage'
                                         ? (originalSubtotal + tax) * (discount / 100) : discount;
@@ -1279,20 +1357,35 @@ export default function LiveBillsPage() {
                                     pdf.line(20, yPos, 190, yPos);
                                     yPos += 8;
 
-                                    // Show all items
+                                    // Show all items (consolidated remaining)
+                                    const itemMap = new Map<string, { name: string, qty: number, total: number }>();
                                     selectedSession.orders.forEach(order => {
                                         order.items.forEach(item => {
-                                            pdf.text(`${item.name} x${item.quantity}`, 20, yPos);
-                                            pdf.text(`€${(item.price * item.quantity).toFixed(2)}`, 180, yPos, { align: 'right' });
-                                            yPos += 6;
+                                            const remainingQty = item.quantity - (item.paidQuantity || 0);
+                                            if (remainingQty <= 0) return;
+
+                                            const key = `${item.name}-${item.price}`;
+                                            if (itemMap.has(key)) {
+                                                const existing = itemMap.get(key)!;
+                                                existing.qty += remainingQty;
+                                                existing.total += item.price * remainingQty;
+                                            } else {
+                                                itemMap.set(key, { name: item.name, qty: remainingQty, total: item.price * remainingQty });
+                                            }
                                         });
+                                    });
+
+                                    itemMap.forEach(item => {
+                                        pdf.text(`${item.name} x${item.qty}`, 20, yPos);
+                                        pdf.text(`€${item.total.toFixed(2)}`, 180, yPos, { align: 'right' });
+                                        yPos += 6;
                                     });
 
                                     yPos += 5;
                                     pdf.line(20, yPos, 190, yPos);
                                     yPos += 8;
 
-                                    pdf.text('Full Total:', 120, yPos);
+                                    pdf.text('Remaining Total:', 120, yPos);
                                     pdf.text(`€${total.toFixed(2)}`, 180, yPos, { align: 'right' });
                                     yPos += 8;
 

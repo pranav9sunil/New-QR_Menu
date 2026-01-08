@@ -21,8 +21,9 @@ import {
 } from '@/components/ui/table';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog';
-import { Receipt, Calendar } from 'lucide-react';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
+import { Receipt, Calendar, Printer } from 'lucide-react';
+import { jsPDF } from 'jspdf';
 
 export default function PastBillsPage() {
     const { restaurantId } = useAuth();
@@ -41,48 +42,75 @@ export default function PastBillsPage() {
         }
     }, [restaurantId, filterType, selectedDate, selectedMonth]);
 
-    const getDateRange = () => {
-        let start: Date, end: Date;
 
-        if (filterType === 'day') {
-            start = new Date(selectedDate);
-            start.setHours(0, 0, 0, 0);
-            end = new Date(selectedDate);
-            end.setHours(23, 59, 59, 999);
-        } else {
-            const [year, month] = selectedMonth.split('-').map(Number);
-            start = new Date(year, month - 1, 1);
-            end = new Date(year, month, 0, 23, 59, 59, 999);
-        }
-        return { start, end };
-    };
 
     const loadPastSessions = async () => {
         if (!restaurantId) return;
         setLoading(true);
         const sessionsRef = collection(db, 'sessions');
-        const { start, end } = getDateRange();
+
+        // Use local browser time range for simplicity first, then we can refine if strictly needed.
+        // Actually, let's use a simpler approach that covers "entire day +/- margin" to ensure we get data, 
+        // then filter exact CET times in client. This is safer against Firestore index issues.
+
+        const targetDate = new Date(selectedDate);
+        const queryStart = new Date(targetDate);
+        queryStart.setDate(queryStart.getDate() - 1); // Buffer
+        const queryEnd = new Date(targetDate);
+        queryEnd.setDate(queryEnd.getDate() + 2); // Buffer
 
         try {
-            // Try server-side filtering
+            // Strategy: Fetch ALL closed sessions for this restaurant (within reasonable bounds) 
+            // and filter in memory. This avoids complex composite indexes with timezones.
+            // If dataset is huge, this needs optimization, but for now it ensures ACCURACY.
+
+            // Try fetch by status 'closed' only first (most reliable)
             const q = query(
                 sessionsRef,
                 where('restaurantId', '==', restaurantId),
                 where('status', '==', 'closed'),
-                where('createdAt', '>=', start),
-                where('createdAt', '<=', end),
-                orderBy('createdAt', 'desc')
+                orderBy('closedAt', 'desc') // Ensure we have index for this
             );
 
             const snapshot = await getDocs(q);
             const loadedSessions: TableSession[] = [];
+
+            // CET Offset helper
+            const isWithinCETRange = (date: Date) => {
+                // Convert UTC date to CET string to check 'YYYY-MM-DD'
+                // CET is GMT+1
+                const cetDate = new Date(date.getTime() + (60 * 60 * 1000));
+                const dateStr = cetDate.toISOString().split('T')[0];
+                return dateStr === selectedDate;
+            };
+
+            const isWithinCETMonth = (date: Date) => {
+                const cetDate = new Date(date.getTime() + (60 * 60 * 1000));
+                const monthStr = cetDate.toISOString().slice(0, 7);
+                return monthStr === selectedMonth;
+            };
+
             snapshot.forEach((doc) => {
-                loadedSessions.push({ id: doc.id, ...doc.data() } as TableSession);
+                const data = doc.data() as TableSession;
+                // Use closedAt preferably, fallback to createdAt
+                const timestamp = data.closedAt || data.createdAt;
+                const dateObj = timestamp instanceof Timestamp ? timestamp.toDate() : new Date(timestamp);
+
+                if (filterType === 'day') {
+                    if (isWithinCETRange(dateObj)) {
+                        loadedSessions.push({ ...data, id: doc.id });
+                    }
+                } else {
+                    if (isWithinCETMonth(dateObj)) {
+                        loadedSessions.push({ ...data, id: doc.id });
+                    }
+                }
             });
+
             setSessions(loadedSessions);
         } catch (error) {
-            console.error('Error loading past sessions (index might be missing):', error);
-            // Fallback: fetch all closed and filter client-side
+            console.error('Error loading past sessions:', error);
+            // Fallback for missing index on closedAt
             try {
                 const qFallback = query(
                     sessionsRef,
@@ -91,25 +119,35 @@ export default function PastBillsPage() {
                 );
                 const snapshot = await getDocs(qFallback);
                 const loadedSessions: TableSession[] = [];
+
+                // Same filter logic
+                const isWithinCETRange = (date: Date) => {
+                    const cetDate = new Date(date.getTime() + (60 * 60 * 1000));
+                    const dateStr = cetDate.toISOString().split('T')[0];
+                    return dateStr === selectedDate;
+                };
+
                 snapshot.forEach((doc) => {
                     const data = doc.data() as TableSession;
-                    const createdAt = data.createdAt instanceof Timestamp ? data.createdAt.toDate() : new Date(data.createdAt);
+                    const timestamp = data.closedAt || data.createdAt;
+                    const dateObj = timestamp instanceof Timestamp ? timestamp.toDate() : new Date(timestamp);
 
-                    if (createdAt >= start && createdAt <= end) {
+                    if (isWithinCETRange(dateObj)) {
                         loadedSessions.push({ ...data, id: doc.id });
                     }
                 });
 
+                // Manual Sort
                 loadedSessions.sort((a, b) => {
-                    const dateA = a.createdAt instanceof Timestamp ? a.createdAt.toDate() : new Date(a.createdAt);
-                    const dateB = b.createdAt instanceof Timestamp ? b.createdAt.toDate() : new Date(b.createdAt);
-                    return dateB.getTime() - dateA.getTime();
+                    const getT = (s: TableSession) => {
+                        const t = s.closedAt || s.createdAt;
+                        return t instanceof Timestamp ? t.toMillis() : new Date(t).getTime();
+                    }
+                    return getT(b) - getT(a);
                 });
 
                 setSessions(loadedSessions);
-            } catch (fallbackError) {
-                console.error("Fallback failed", fallbackError);
-            }
+            } catch (e) { console.error("Fatal fallback error", e); }
         } finally {
             setLoading(false);
         }
@@ -152,11 +190,147 @@ export default function PastBillsPage() {
     const formatDate = (date: any) => {
         if (!date) return 'N/A';
         const d = date instanceof Timestamp ? date.toDate() : new Date(date);
-        return d.toLocaleDateString() + ' ' + d.toLocaleTimeString();
+
+        // Force display in CET/CEST (Restaurant Timezone)
+        return new Intl.DateTimeFormat('en-GB', {
+            year: 'numeric',
+            month: '2-digit',
+            day: '2-digit',
+            hour: '2-digit',
+            minute: '2-digit',
+            timeZone: 'Europe/Madrid',
+            hour12: false
+        }).format(d);
     };
 
-    const calculateTotal = (orders: Order[]) => {
-        return orders.reduce((sum, order) => sum + order.total, 0);
+    const calculateBillSummary = (orders: Order[], session: TableSession) => {
+        const summary = {
+            items: [] as { name: string; quantity: number; price: number; total: number }[],
+            subtotal: 0,
+            tax: 0,
+            discount: 0,
+            tip: session.tipAmount || 0,
+            total: 0
+        };
+
+        const itemMap = new Map<string, { name: string; quantity: number; price: number; total: number }>();
+
+        orders.forEach(order => {
+            summary.subtotal += order.subtotal;
+            summary.tax += order.tax;
+            summary.discount += (order.discount || 0);
+
+            order.items.forEach(item => {
+                // Create a unique key for aggregation
+                const key = `${item.name}-${item.price}`;
+
+                if (itemMap.has(key)) {
+                    const existing = itemMap.get(key)!;
+                    existing.quantity += item.quantity;
+                    existing.total += (item.price * item.quantity);
+                } else {
+                    itemMap.set(key, {
+                        name: item.name,
+                        quantity: item.quantity,
+                        price: item.price,
+                        total: (item.price * item.quantity)
+                    });
+                }
+            });
+        });
+
+        summary.items = Array.from(itemMap.values());
+        // Calculate final total based on components
+        summary.total = summary.subtotal + summary.tax + summary.tip - summary.discount;
+
+        return summary;
+    };
+
+    const handlePrintBill = () => {
+        if (!selectedSession || selectedSession.orders.length === 0) return;
+
+        const summary = calculateBillSummary(selectedSession.orders, selectedSession.session);
+
+        const doc = new jsPDF({
+            orientation: 'portrait',
+            unit: 'mm',
+            format: [80, 200 + (summary.items.length * 5)] // Dynamic height based on items
+        });
+
+        let yPos = 10;
+        const lineVal = 5;
+
+        // Header
+        doc.setFontSize(12);
+        doc.setFont("helvetica", "bold");
+        doc.text("FINAL BILL", 40, yPos, { align: 'center' });
+        yPos += lineVal + 2;
+
+        doc.setFontSize(9);
+        doc.setFont("helvetica", "normal");
+        doc.text(`Table: ${selectedSession.session.tableName}`, 5, yPos);
+        yPos += lineVal;
+        doc.text(`Date: ${formatDate(selectedSession.session.createdAt)}`, 5, yPos);
+        yPos += lineVal + 3;
+
+        // Divider
+        doc.line(5, yPos, 75, yPos);
+        yPos += 3;
+
+        // Items
+        doc.setFontSize(8);
+
+        summary.items.forEach(item => {
+            const name = item.quantity > 1 ? `${item.quantity}x ${item.name}` : item.name;
+            const truncatedName = name.length > 25 ? name.substring(0, 22) + '...' : name;
+
+            doc.text(truncatedName, 5, yPos);
+            doc.text(item.total.toFixed(2), 75, yPos, { align: 'right' });
+            yPos += lineVal;
+        });
+
+        yPos += 2;
+        doc.line(5, yPos, 75, yPos);
+        yPos += 4;
+
+        // Summary Statistics
+        doc.setFontSize(9);
+
+        // Subtotal
+        doc.text("Subtotal:", 5, yPos);
+        doc.text(summary.subtotal.toFixed(2), 75, yPos, { align: 'right' });
+        yPos += lineVal;
+
+        // Tax
+        if (summary.tax > 0) {
+            doc.text("Tax:", 5, yPos);
+            doc.text(summary.tax.toFixed(2), 75, yPos, { align: 'right' });
+            yPos += lineVal;
+        }
+
+        // Discount
+        if (summary.discount > 0) {
+            doc.text("Discount:", 5, yPos);
+            doc.text(`-${summary.discount.toFixed(2)}`, 75, yPos, { align: 'right' });
+            yPos += lineVal;
+        }
+
+        // Tip
+        if (summary.tip > 0) {
+            doc.text("Tip:", 5, yPos);
+            doc.text(summary.tip.toFixed(2), 75, yPos, { align: 'right' });
+            yPos += lineVal;
+        }
+
+        yPos += 2;
+        doc.setFont("helvetica", "bold");
+        doc.setFontSize(11);
+        doc.text("TOTAL:", 5, yPos);
+        doc.text(`€${summary.total.toFixed(2)}`, 75, yPos, { align: 'right' });
+
+        // Auto Print logic
+        doc.autoPrint();
+        window.open(doc.output('bloburl'), '_blank');
     };
 
     if (loading) {
@@ -268,18 +442,18 @@ export default function PastBillsPage() {
 
             {/* Bill Details Dialog */}
             <Dialog open={detailsOpen} onOpenChange={setDetailsOpen}>
-                <DialogContent className="max-w-md max-h-[80vh] flex flex-col bg-white">
+                <DialogContent className="max-w-md max-h-[85vh] flex flex-col bg-white">
                     <DialogHeader>
                         <DialogTitle className="flex items-center gap-2">
                             <Receipt className="h-5 w-5" />
-                            Bill Details
+                            Final Bill
                         </DialogTitle>
                         <DialogDescription>
                             {selectedSession?.session.tableName} • {formatDate(selectedSession?.session.createdAt)}
                         </DialogDescription>
                     </DialogHeader>
 
-                    <div className="flex-1 overflow-y-auto space-y-4 py-4">
+                    <div className="flex-1 overflow-y-auto py-4">
                         {detailsLoading ? (
                             <div className="flex justify-center py-8">
                                 <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
@@ -289,40 +463,73 @@ export default function PastBillsPage() {
                                 <p>No orders found for this session.</p>
                             </div>
                         ) : (
-                            <div className="space-y-6">
-                                {selectedSession.orders.map((order, index) => (
-                                    <div key={order.id} className="border-b pb-4 last:border-0">
-                                        <div className="font-medium mb-2 text-sm text-muted-foreground">
-                                            Order #{index + 1}
-                                        </div>
-                                        {order.items.map((item, i) => (
-                                            <div key={i} className="flex justify-between text-sm mb-1">
-                                                <span>{item.quantity}x {item.name}</span>
-                                                <span>€{(item.price * item.quantity).toFixed(2)}</span>
+                            <div className="space-y-4">
+                                {(() => {
+                                    const summary = calculateBillSummary(selectedSession.orders, selectedSession.session);
+                                    return (
+                                        <>
+                                            {/* Consolidated Items List */}
+                                            <div className="space-y-3">
+                                                {summary.items.map((item, index) => (
+                                                    <div key={index} className="flex justify-between text-sm">
+                                                        <div className="flex gap-2">
+                                                            <span className="font-semibold text-gray-700">{item.quantity}x</span>
+                                                            <span className="text-gray-900">{item.name}</span>
+                                                        </div>
+                                                        <span className="font-medium text-gray-900">€{item.total.toFixed(2)}</span>
+                                                    </div>
+                                                ))}
                                             </div>
-                                        ))}
-                                        <div className="flex justify-between text-sm font-medium mt-2 text-slate-600">
-                                            <span>Subtotal</span>
-                                            <span>€{order.total.toFixed(2)}</span>
-                                        </div>
-                                    </div>
-                                ))}
+
+                                            <div className="border-t my-4"></div>
+
+                                            {/* Financial Summary */}
+                                            <div className="space-y-2 text-sm">
+                                                <div className="flex justify-between text-gray-600">
+                                                    <span>Subtotal</span>
+                                                    <span>€{summary.subtotal.toFixed(2)}</span>
+                                                </div>
+                                                {summary.tax > 0 && (
+                                                    <div className="flex justify-between text-gray-600">
+                                                        <span>Tax</span>
+                                                        <span>€{summary.tax.toFixed(2)}</span>
+                                                    </div>
+                                                )}
+                                                {summary.discount > 0 && (
+                                                    <div className="flex justify-between text-green-600">
+                                                        <span>Discount</span>
+                                                        <span>-€{summary.discount.toFixed(2)}</span>
+                                                    </div>
+                                                )}
+                                                {summary.tip > 0 && (
+                                                    <div className="flex justify-between text-blue-600">
+                                                        <span>Tip</span>
+                                                        <span>€{summary.tip.toFixed(2)}</span>
+                                                    </div>
+                                                )}
+                                            </div>
+
+                                            {/* Total Footer inside Dialog */}
+                                            <div className="space-y-4 pt-4 border-t bg-gray-50 -mx-6 px-6 py-4 mt-auto">
+                                                <div className="flex justify-between text-xl font-bold text-primary">
+                                                    <span>Total</span>
+                                                    <span>€{summary.total.toFixed(2)}</span>
+                                                </div>
+
+                                                <div className="grid grid-cols-2 gap-3">
+                                                    <Button onClick={handlePrintBill} variant="outline" className="w-full flex gap-2">
+                                                        <Printer className="w-4 h-4" />
+                                                        Print Bill
+                                                    </Button>
+                                                    <Button onClick={() => setDetailsOpen(false)} className="w-full">Close</Button>
+                                                </div>
+                                            </div>
+                                        </>
+                                    );
+                                })()}
                             </div>
                         )}
                     </div>
-
-                    {selectedSession && selectedSession.orders.length > 0 && (
-                        <div className="space-y-2 pt-4 border-t bg-gray-50 -mx-6 px-6 py-4 mt-auto">
-                            <div className="flex justify-between text-xl font-bold text-primary">
-                                <span>Total Bill:</span>
-                                <span>€{calculateTotal(selectedSession.orders).toFixed(2)}</span>
-                            </div>
-                        </div>
-                    )}
-
-                    <DialogFooter>
-                        <Button onClick={() => setDetailsOpen(false)} className="w-full">Close</Button>
-                    </DialogFooter>
                 </DialogContent>
             </Dialog>
         </div>

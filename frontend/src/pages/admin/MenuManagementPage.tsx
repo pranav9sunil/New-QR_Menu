@@ -810,7 +810,7 @@ export default function MenuManagementPage() {
                         <div className="space-y-2">
                             <Label>Dietary Tags</Label>
                             <div className="flex gap-4">
-                                {['vegetarian', 'vegan', 'gluten-free'].map((tag) => (
+                                {['vegetarian', 'vegan', 'gluten-free', 'non-vegetarian', 'dairy', 'gluten'].map((tag) => (
                                     <label key={tag} className="flex items-center space-x-2">
                                         <input
                                             type="checkbox"

@@ -1,4 +1,5 @@
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
+import { Toaster } from 'sonner';
 import { AuthProvider } from './contexts/AuthContext';
 import { LanguageProvider } from './contexts/LanguageContext';
 import ProtectedRoute from './components/shared/ProtectedRoute';
@@ -18,6 +19,8 @@ import PrinterPage from './pages/admin/PrinterPage';
 import LiveBillsPage from './pages/admin/LiveBillsPage';
 import TPVPage from './pages/admin/TPVPage';
 import ReservationsPage from './pages/admin/ReservationsPage';
+import TableCodesPage from './pages/admin/TableCodesPage';
+import UserManagementPage from './pages/admin/UserManagementPage';
 
 function App() {
   return (
@@ -52,12 +55,15 @@ function App() {
               <Route path="printers" element={<PrinterPage />} />
               <Route path="bills" element={<PastBillsPage />} />
               <Route path="reservations" element={<ReservationsPage />} />
+              <Route path="table-codes" element={<TableCodesPage />} />
+              <Route path="users" element={<UserManagementPage />} />
             </Route>
 
             {/* Fallback */}
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>
         </BrowserRouter>
+        <Toaster position="top-center" richColors />
       </AuthProvider>
     </LanguageProvider>
   );

@@ -8,7 +8,7 @@ service cloud.firestore {
       allow write: if request.auth != null;
     }
     
-// Users - read/write own document
+    // Users - read/write own document
     // NOTE: Updated to allow Admins to read all users (Required for User Management)
     match /users/{userId} {
       // ORIGINALLY: allow read, write: if request.auth != null && request.auth.uid == userId;

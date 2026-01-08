@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
+import { toast } from 'sonner';
 import { useAuth } from '@/contexts/AuthContext';
 import { db } from '@/config/firebase';
 import {
@@ -14,12 +15,14 @@ import {
     deleteField,
     onSnapshot,
     serverTimestamp,
+    Timestamp,
 } from 'firebase/firestore';
-import type { Table, TableSession, Order, Layout as TableLayout } from '@/types';
+import type { Table, TableSession, Order, Layout as TableLayout, Reservation } from '@/types';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import {
+    // Removed Tabs imports as we'll use state
     Dialog,
     DialogContent,
     DialogDescription,
@@ -43,6 +46,7 @@ import {
     CalendarClock,
     ChevronDown,
     MoveRight,
+    Calendar, // Keeping these used icons
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
@@ -66,6 +70,8 @@ export default function TableLayoutDesigner() {
     const canvasRef = useRef<HTMLDivElement>(null);
     const [dragOffset, setDragOffset] = useState({ x: 0, y: 0 });
     const [activeSessions, setActiveSessions] = useState<Record<string, TableSession>>({});
+    const [reservations, setReservations] = useState<Reservation[]>([]);
+    const [currentTime, setCurrentTime] = useState(new Date());
 
     // Session Details Dialog State
     const [showSessionDialog, setShowSessionDialog] = useState(false);
@@ -81,6 +87,7 @@ export default function TableLayoutDesigner() {
     // Reservation Details State
     const [showReservationDialog, setShowReservationDialog] = useState(false);
     const [selectedReservedTable, setSelectedReservedTable] = useState<Table | null>(null);
+    const [isClosingSession, setIsClosingSession] = useState(false);
 
     // Layout State
     const [layouts, setLayouts] = useState<TableLayout[]>([]);
@@ -218,6 +225,48 @@ export default function TableLayoutDesigner() {
         return () => unsubscribe();
     }, [restaurantId]);
 
+    // Fetch Reservations & Time ticker
+    useEffect(() => {
+        if (!restaurantId) return;
+
+        // Time ticker for dynamic status updates
+        const timer = setInterval(() => setCurrentTime(new Date()), 60000); // Every minute
+
+        const startOfDay = new Date();
+        startOfDay.setHours(0, 0, 0, 0);
+
+        const reservationsRef = collection(db, 'reservations');
+        const q = query(
+            reservationsRef,
+            where('restaurantId', '==', restaurantId),
+            where('dateTime', '>=', Timestamp.fromDate(startOfDay)),
+            where('status', 'in', ['pending', 'confirmed'])
+        );
+
+        const unsubscribe = onSnapshot(q, (snapshot) => {
+            const loadedReservations: Reservation[] = [];
+            snapshot.forEach((doc) => {
+                const data = doc.data();
+                loadedReservations.push({
+                    id: doc.id,
+                    ...data,
+                    dateTime: data.dateTime?.toDate?.() || new Date(data.dateTime),
+                    createdAt: data.createdAt?.toDate?.() || new Date(data.createdAt),
+                } as Reservation);
+            });
+            // Sort by time
+            loadedReservations.sort((a, b) => new Date(a.dateTime).getTime() - new Date(b.dateTime).getTime());
+            setReservations(loadedReservations);
+        }, (error) => {
+            console.error('Error loading reservations:', error);
+        });
+
+        return () => {
+            unsubscribe();
+            clearInterval(timer);
+        };
+    }, [restaurantId]);
+
     const addTable = async () => {
         if (!restaurantId) return;
 
@@ -239,7 +288,7 @@ export default function TableLayoutDesigner() {
             setNewTableSeats(4);
         } catch (error) {
             console.error('Error adding table:', error);
-            alert('Failed to add table');
+            toast.error('Failed to add table');
         }
     };
 
@@ -249,7 +298,7 @@ export default function TableLayoutDesigner() {
             setTables(tables.filter((t) => t.id !== tableId));
         } catch (error) {
             console.error('Error deleting table:', error);
-            alert('Failed to delete table');
+            toast.error('Failed to delete table');
         }
     };
 
@@ -278,7 +327,7 @@ export default function TableLayoutDesigner() {
     const handleMakeReservation = async () => {
         if (!selectedEmptyTable || !restaurantId) return;
         if (!reservationForm.name || !reservationForm.time) {
-            alert('Please fill in Name and Time');
+            toast.error('Please fill in Name and Time');
             return;
         }
 
@@ -294,7 +343,7 @@ export default function TableLayoutDesigner() {
             setIsReserving(false);
         } catch (error) {
             console.error('Error making reservation:', error);
-            alert('Failed to make reservation');
+            toast.error('Failed to make reservation');
         }
     };
 
@@ -314,7 +363,7 @@ export default function TableLayoutDesigner() {
             setSelectedReservedTable(null);
         } catch (error) {
             console.error('Error canceling reservation:', error);
-            alert('Failed to cancel reservation');
+            toast.error('Failed to cancel reservation');
         }
     };
 
@@ -375,7 +424,9 @@ export default function TableLayoutDesigner() {
             setSelectedTableSession(null);
         } catch (error) {
             console.error('Error closing session:', error);
-            alert('Failed to close session');
+            toast.error('Failed to close session');
+        } finally {
+            setIsClosingSession(false);
         }
     };
 
@@ -383,7 +434,7 @@ export default function TableLayoutDesigner() {
         if (!editTableData || !restaurantId) return;
 
         if (tables.some((t) => t.id !== editTableData.id && t.name === editTableData.name)) {
-            alert('Table name must be unique!');
+            toast.error('Table name must be unique!');
             return;
         }
 
@@ -403,7 +454,8 @@ export default function TableLayoutDesigner() {
             setEditTableData(null);
         } catch (error) {
             console.error('Error updating table:', error);
-            alert('Failed to update table');
+            toast.error('Failed to update table');
+            // Revert optimistic update if needed, but we'll just let the error show
         }
     };
 
@@ -463,11 +515,11 @@ export default function TableLayoutDesigner() {
                 { merge: true }
             );
 
-            alert('Layout saved successfully!');
+            toast.success('Layout saved successfully!');
             setIsEditing(false); // Exit edit mode after saving
         } catch (error) {
             console.error('Error saving layout:', error);
-            alert('Failed to save layout');
+            toast.error('Failed to save layout');
         } finally {
             setSaving(false);
         }
@@ -489,9 +541,9 @@ export default function TableLayoutDesigner() {
         } catch (error: any) {
             console.error('Error creating layout:', error);
             if (error.code === 'permission-denied') {
-                alert('Permission denied: You need to update your Firestore Security Rules to allow creating layouts. See FIRESTORE_RULES_UPDATE_LAYOUTS.md');
+                toast.error('Permission denied: You need to update your Firestore Security Rules allow creating layouts.');
             } else {
-                alert('Failed to create layout');
+                toast.error('Failed to create layout');
             }
         }
     };
@@ -511,7 +563,7 @@ export default function TableLayoutDesigner() {
             setEditingLayout(null);
         } catch (error) {
             console.error('Error updating layout:', error);
-            alert('Failed to update layout');
+            toast.error('Failed to update layout');
         }
     };
 
@@ -547,7 +599,7 @@ export default function TableLayoutDesigner() {
                     closedAt: new Date(),
                 });
 
-                alert(`Orders merged with ${targetTable.name}`);
+                toast.success(`Orders merged with ${targetTable.name}`);
             } else {
                 // Target table is empty - MOVE session
                 // Update the session to point to the new table
@@ -564,14 +616,14 @@ export default function TableLayoutDesigner() {
                     });
                 }
 
-                alert(`Order moved to ${targetTable.name}`);
+                toast.success(`Order moved to ${targetTable.name}`);
             }
 
             setShowSessionDialog(false);
             setSelectedTableSession(null);
         } catch (error) {
             console.error('Error moving order:', error);
-            alert('Failed to move order');
+            toast.error('Failed to move order');
         } finally {
             setMovingOrder(false);
         }
@@ -746,20 +798,54 @@ export default function TableLayoutDesigner() {
                             const isReserved = !!table.reservation;
 
                             // Determine colors
-                            let bgColor = "bg-green-50"; // Empty (Greenish)
+                            // Determine colors (Removed duplicate declaration)
+
+
+                            // Calculate status
+                            const tableReservations = reservations.filter(r => r.tableId === table.id);
+
+                            // Check for upcoming reservations later today
+                            const upcomingReservations = tableReservations.filter(r => new Date(r.dateTime) > currentTime);
+                            const hasUpcoming = upcomingReservations.length > 0;
+
+                            // Check if functionally "Reserved" (within 1 hour)
+                            // Find the *next* reservation that is within 1 hour from now
+                            const imminentReservation = upcomingReservations.find(r => {
+                                const diff = new Date(r.dateTime).getTime() - currentTime.getTime();
+                                return diff <= 3600000; // 1 hour in ms
+                            });
+
+                            // Check for "Very Imminent" reservation (within 15 mins)
+                            const veryImminentReservation = upcomingReservations.find(r => {
+                                const diff = new Date(r.dateTime).getTime() - currentTime.getTime();
+                                return diff <= 900000; // 15 mins in ms
+                            });
+
+                            const isImminentReserved = !!imminentReservation;
+                            const isVeryImminent = !!veryImminentReservation;
+
+                            // Determine visual style
+                            let bgColor = "bg-green-50"; // Default Free (Green)
                             let borderColor = "border-green-500";
                             let textColor = "text-green-900";
 
+                            // Reserved status takes precedence over empty, but Occupied takes precedence over Reserved
                             if (session) {
-                                bgColor = "bg-gray-100"; // Occupied (Grey)
-                                borderColor = "border-gray-400";
-                                textColor = "text-gray-900";
-                                if (isPaymentPending) {
+                                if (isVeryImminent) {
+                                    // Occupied + Reservation within 15 mins -> Blinking Yellow
+                                    bgColor = "bg-yellow-100 animate-pulse";
+                                    borderColor = "border-yellow-500";
+                                    textColor = "text-yellow-900";
+                                } else if (isPaymentPending) {
                                     bgColor = "bg-red-50 animate-pulse";
                                     borderColor = "border-red-500";
                                     textColor = "text-red-900";
+                                } else {
+                                    bgColor = "bg-gray-100"; // Occupied (Grey)
+                                    borderColor = "border-gray-400";
+                                    textColor = "text-gray-900";
                                 }
-                            } else if (isReserved) {
+                            } else if (isImminentReserved || table.reservation) { // Support both dynamic and manual legacy
                                 bgColor = "bg-orange-50"; // Reserved (Orange)
                                 borderColor = "border-orange-500";
                                 textColor = "text-orange-900";
@@ -801,9 +887,12 @@ export default function TableLayoutDesigner() {
                                                         <Edit2 className="h-3 w-3" />
                                                     </button>
                                                 )}
-                                                {!isEditing && isReserved && (
-                                                    <div className="bg-orange-200 text-orange-800 rounded-full p-1">
-                                                        <Info className="h-3 w-3" />
+                                                {!isEditing && hasUpcoming && (
+                                                    <div className={cn(
+                                                        "rounded-full p-1 flex items-center justify-center",
+                                                        isImminentReserved ? "bg-orange-200 text-orange-800" : "bg-blue-50 text-blue-500"
+                                                    )}>
+                                                        {isImminentReserved ? <Info className="h-3 w-3" /> : <Calendar className="h-3 w-3" />}
                                                     </div>
                                                 )}
                                             </div>
@@ -833,11 +922,9 @@ export default function TableLayoutDesigner() {
                                                         <div className="flex flex-col">
                                                             <span>BILL READY</span>
                                                             <span className="text-[10px] font-medium">
-                                                                {(session as any).paymentType === 'split'
-                                                                    ? '💳 Split Payment'
-                                                                    : (session as any).paymentMethod === 'cash'
-                                                                        ? '💵 Cash'
-                                                                        : '💳 Card'}
+                                                                {(session as any).paymentMethod === 'cash'
+                                                                    ? '💵 Cash'
+                                                                    : '💳 Card'}
                                                             </span>
                                                         </div>
                                                     ) : `Code: ${session.code}`}
@@ -1067,18 +1154,59 @@ export default function TableLayoutDesigner() {
                     )}
 
                     <DialogFooter className="flex justify-between gap-2">
-                        <Button variant="outline" onClick={() => setShowSessionDialog(false)}>
-                            Close
-                        </Button>
-                        <Button
-                            onClick={closeSession}
-                            variant="destructive"
-                            className="bg-green-600 hover:bg-green-700 text-white"
-                        >
-                            <CheckCircle className="h-4 w-4 mr-2" />
-                            Finish Billing & Clear Table
-                        </Button>
+                        {isClosingSession ? (
+                            <>
+                                <span className="flex items-center text-sm font-semibold text-red-600 mr-auto">
+                                    Are you sure? This will clear the table.
+                                </span>
+                                <Button variant="outline" onClick={() => setIsClosingSession(false)}>
+                                    Cancel
+                                </Button>
+                                <Button
+                                    onClick={closeSession}
+                                    variant="destructive"
+                                    className="bg-red-600 hover:bg-red-700 text-white"
+                                >
+                                    Confirm Clear
+                                </Button>
+                            </>
+                        ) : (
+                            <>
+                                <Button variant="outline" onClick={() => setShowSessionDialog(false)}>
+                                    Close
+                                </Button>
+                                <Button
+                                    onClick={() => setIsClosingSession(true)}
+                                    variant="destructive"
+                                    className="bg-green-600 hover:bg-green-700 text-white"
+                                >
+                                    <CheckCircle className="h-4 w-4 mr-2" />
+                                    Finish Billing & Clear Table
+                                </Button>
+                            </>
+                        )}
                     </DialogFooter>
+
+                    {/* Upcoming Reservations List */}
+                    <div className="border-t pt-4 pb-4 -mx-6 px-6 bg-gray-50 mt-4">
+                        <Label className="mb-2 block text-muted-foreground">Upcoming Reservations (Today)</Label>
+                        {reservations.filter(r => r.tableId === selectedTableSession?.table.id && new Date(r.dateTime) > currentTime && new Date(r.dateTime).getDate() === currentTime.getDate()).length === 0 ? (
+                            <p className="text-sm text-gray-500 italic">No upcoming reservations for today.</p>
+                        ) : (
+                            <div className="space-y-2 max-h-40 overflow-y-auto">
+                                {reservations
+                                    .filter(r => r.tableId === selectedTableSession?.table.id && new Date(r.dateTime) > currentTime && new Date(r.dateTime).getDate() === currentTime.getDate())
+                                    .map(r => (
+                                        <div key={r.id} className="text-sm border rounded p-2 bg-orange-50 border-orange-100 flex justify-between items-center">
+                                            <div>
+                                                <div className="font-medium text-orange-900">{r.customerName}</div>
+                                                <div className="text-xs text-orange-700">{new Date(r.dateTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} • {r.guests || 2} guests</div>
+                                            </div>
+                                        </div>
+                                    ))}
+                            </div>
+                        )}
+                    </div>
                 </DialogContent>
             </Dialog>
 
@@ -1098,10 +1226,6 @@ export default function TableLayoutDesigner() {
                                 <p>This table is currently empty.</p>
                                 <p className="text-sm mt-1">Waiting for customers to scan the QR code.</p>
                             </div>
-                            <Button onClick={() => setIsReserving(true)} className="w-full">
-                                <CalendarClock className="h-4 w-4 mr-2" />
-                                Make Reservation
-                            </Button>
                         </div>
                     ) : (
                         <div className="space-y-4 py-2">
@@ -1154,6 +1278,27 @@ export default function TableLayoutDesigner() {
                             </Button>
                         )}
                     </DialogFooter>
+
+                    {/* Upcoming Reservations List */}
+                    <div className="border-t pt-4 mt-4">
+                        <Label className="mb-2 block text-muted-foreground">Upcoming Reservations (Today)</Label>
+                        {reservations.filter(r => r.tableId === selectedEmptyTable?.id && new Date(r.dateTime) > currentTime && new Date(r.dateTime).getDate() === currentTime.getDate()).length === 0 ? (
+                            <p className="text-sm text-gray-500 italic">No upcoming reservations for today.</p>
+                        ) : (
+                            <div className="space-y-2 max-h-40 overflow-y-auto">
+                                {reservations
+                                    .filter(r => r.tableId === selectedEmptyTable?.id && new Date(r.dateTime) > currentTime && new Date(r.dateTime).getDate() === currentTime.getDate())
+                                    .map(r => (
+                                        <div key={r.id} className="text-sm border rounded p-2 bg-orange-50 border-orange-100 flex justify-between items-center">
+                                            <div>
+                                                <div className="font-medium text-orange-900">{r.customerName}</div>
+                                                <div className="text-xs text-orange-700">{new Date(r.dateTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} • {r.guests || 2} guests</div>
+                                            </div>
+                                        </div>
+                                    ))}
+                            </div>
+                        )}
+                    </div>
                 </DialogContent>
             </Dialog>
 
@@ -1200,12 +1345,33 @@ export default function TableLayoutDesigner() {
                             Close
                         </Button>
                         <Button
-                            variant="destructive"
                             onClick={handleCancelReservation}
+                            variant="destructive"
                         >
                             Cancel Reservation
                         </Button>
                     </DialogFooter>
+
+                    {/* Upcoming Reservations List */}
+                    <div className="border-t pt-4 pb-4 px-6 -mx-6 bg-gray-50 mt-4">
+                        <Label className="mb-2 block text-muted-foreground">Other Upcoming Reservations (Today)</Label>
+                        {reservations.filter(r => r.tableId === selectedReservedTable?.id && r.customerName !== selectedReservedTable?.reservation?.name && new Date(r.dateTime) > currentTime && new Date(r.dateTime).getDate() === currentTime.getDate()).length === 0 ? (
+                            <p className="text-sm text-gray-500 italic">No other reservations for today.</p>
+                        ) : (
+                            <div className="space-y-2 max-h-40 overflow-y-auto">
+                                {reservations
+                                    .filter(r => r.tableId === selectedReservedTable?.id && r.customerName !== selectedReservedTable?.reservation?.name && new Date(r.dateTime) > currentTime && new Date(r.dateTime).getDate() === currentTime.getDate())
+                                    .map(r => (
+                                        <div key={r.id} className="text-sm border rounded p-2 bg-white flex justify-between items-center">
+                                            <div>
+                                                <div className="font-medium">{r.customerName}</div>
+                                                <div className="text-xs text-gray-500">{new Date(r.dateTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} • {r.guests || 2} guests</div>
+                                            </div>
+                                        </div>
+                                    ))}
+                            </div>
+                        )}
+                    </div>
                 </DialogContent>
             </Dialog>
 

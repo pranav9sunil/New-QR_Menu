@@ -37,6 +37,11 @@ import { CSS } from '@dnd-kit/utilities';
 
 import SettingsModal from './SettingsModal';
 import { Sheet, SheetContent, SheetTrigger, SheetHeader, SheetTitle } from '@/components/ui/sheet';
+import { Users } from 'lucide-react';
+import { db } from '@/config/firebase';
+import { doc, getDoc } from 'firebase/firestore';
+import { useEffect } from 'react';
+import type { Role } from '@/types';
 
 const DEFAULT_MENU_ITEMS = [
     {
@@ -105,6 +110,22 @@ const DEFAULT_MENU_ITEMS = [
         path: '/admin/reservations',
         id: 'reservations',
     },
+    {
+        label: 'Table Codes',
+        icon: QrCode, // Reusing QrCode icon or Hash if available, importing Hash above might be needed or just use Hash from imports if added.
+        // Wait, I need to check imports in AdminLayout. The existing imports are: ChefHat, LayoutGrid, QrCode, Menu, LogOut, Settings, MenuSquare, Receipt, BarChart3, Wine, Printer, Monitor, GripVertical.
+        // Hash is not imported. I should add it or use QrCode/Monitor. 'QrCode' makes sense or 'Monitor'.
+        // Let's use 'QrCode' for now as it's relevant (codes), OR wait, Table Codes are 2 digits. QrCode is used for 'QR Codes'.
+        // I will add 'Hash' to imports first using multi_replace.
+        path: '/admin/table-codes',
+        id: 'table-codes',
+    },
+    {
+        label: 'Users & Roles',
+        icon: Users,
+        path: '/admin/users',
+        id: 'users',
+    },
 ];
 
 function SortableSidebarItem({ item, onClick }: { item: any, onClick?: () => void }) {
@@ -153,25 +174,79 @@ export default function AdminLayout() {
     const { signOut, userData } = useAuth();
     const navigate = useNavigate();
 
-    const [sidebarItems, setSidebarItems] = useState(() => {
-        const savedOrder = localStorage.getItem('admin_sidebar_order');
-        if (savedOrder) {
-            try {
-                const orderIds = JSON.parse(savedOrder);
-                const orderedItems = orderIds
-                    .map((id: string) => DEFAULT_MENU_ITEMS.find(item => item.id === id))
-                    .filter(Boolean);
+    const [userPermissions, setUserPermissions] = useState<string[] | null>(null);
 
-                // Add any new items that weren't in the saved order
-                const newItems = DEFAULT_MENU_ITEMS.filter(item => !orderIds.includes(item.id));
-                return [...orderedItems, ...newItems];
-            } catch (e) {
-                console.error('Failed to parse sidebar order', e);
-                return DEFAULT_MENU_ITEMS;
+    // Fetch Role Permissions
+    useEffect(() => {
+        if (!userData) return;
+
+        const fetchRole = async () => {
+            // Default: Owner/Admin sees everything if no specific roleId
+            if (userData.role === 'owner' || userData.role === 'admin') {
+                if (!userData.roleId) {
+                    setUserPermissions(null); // Null means ALL access
+                    return;
+                }
             }
-        }
+
+            if (userData.roleId) {
+                try {
+                    const roleDoc = await getDoc(doc(db, 'roles', userData.roleId));
+                    if (roleDoc.exists()) {
+                        const roleData = roleDoc.data() as Role;
+                        setUserPermissions(roleData.permissions);
+                    } else {
+                        // Role deleted or invalid? Fallback to basic access
+                        setUserPermissions([]);
+                    }
+                } catch (error) {
+                    console.error("Error fetching permissions:", error);
+                }
+            } else {
+                // Regular employee with no role assigned? Basic access or none.
+                setUserPermissions([]);
+            }
+        };
+
+        fetchRole();
+    }, [userData]);
+
+
+    const [sidebarItems, setSidebarItems] = useState(() => {
+        // Initial load
         return DEFAULT_MENU_ITEMS;
     });
+
+    // Update Sidebar items when permissions change
+    useEffect(() => {
+        // Get LocalStorage Order
+        const savedOrderStr = localStorage.getItem('admin_sidebar_order');
+        let orderedItems = DEFAULT_MENU_ITEMS;
+
+        if (savedOrderStr) {
+            try {
+                const orderIds = JSON.parse(savedOrderStr);
+                const reordered = orderIds
+                    .map((id: string) => DEFAULT_MENU_ITEMS.find(item => item.id === id))
+                    .filter(Boolean);
+                const newItems = DEFAULT_MENU_ITEMS.filter(item => !orderIds.includes(item.id));
+                orderedItems = [...reordered, ...newItems];
+            } catch (e) {
+                console.error('Failed to parse sidebar order', e);
+            }
+        }
+
+        // Apply Permission Filter
+        if (userPermissions !== null) {
+            // Filter orderedItems based on permissions
+            const filtered = orderedItems.filter(item => userPermissions.includes(item.id));
+            setSidebarItems(filtered);
+        } else {
+            // Show all
+            setSidebarItems(orderedItems);
+        }
+
+    }, [userPermissions]);
 
     const sensors = useSensors(
         useSensor(PointerSensor, {
@@ -193,6 +268,9 @@ export default function AdminLayout() {
                 const newIndex = items.findIndex((item) => item.id === over?.id);
                 const newItems = arrayMove(items, oldIndex, newIndex);
 
+                // Only save order of items currently visible? 
+                // Better: Save the order, but filter on render/effect?
+                // For simplicity, we just save the ID list.
                 localStorage.setItem('admin_sidebar_order', JSON.stringify(newItems.map(i => i.id)));
                 return newItems;
             });

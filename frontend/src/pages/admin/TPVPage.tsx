@@ -1,5 +1,6 @@
 
 import { useState, useEffect } from 'react';
+import { toast } from 'sonner';
 import { useAuth } from '@/contexts/AuthContext';
 import { db } from '@/config/firebase';
 import {
@@ -253,11 +254,11 @@ export default function TPVPage() {
 
     const handlePlaceOrder = async () => {
         if (!selectedTableId) {
-            alert('Please select a table first');
+            toast.error('Please select a table first');
             return;
         }
         if (cart.length === 0) {
-            alert('Cart is empty');
+            toast.error('Cart is empty');
             return;
         }
 
@@ -330,13 +331,13 @@ export default function TPVPage() {
 
             await addDoc(collection(db, 'orders'), order);
 
-            alert('Order placed successfully!');
+            toast.success('Order placed successfully!');
             setCart([]);
             setSelectedTableId(null);
 
         } catch (error) {
             console.error('Error placing order:', error);
-            alert('Failed to place order');
+            toast.error('Failed to place order');
         }
     };
 

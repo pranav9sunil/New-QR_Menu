@@ -28,6 +28,17 @@ export interface User {
     restaurantId: string;
     isActive: boolean;
     createdAt: Date;
+    roleId?: string; // ID of the custom Role document
+    customRole?: Role; // Populated role data
+}
+
+export interface Role {
+    id: string;
+    restaurantId: string;
+    name: string;
+    permissions: string[]; // List of Sidebar item IDs they can see
+    createdAt: Date;
+    isSystem?: boolean; // If true, cannot be deleted (e.g. Owner)
 }
 
 export interface Table {
@@ -92,7 +103,7 @@ export interface MenuItem {
     imageUrl?: string;
     isAvailable: boolean;
     allergens?: string[];
-    dietary: ('vegan' | 'vegetarian' | 'gluten-free' | 'non-vegetarian')[];
+    dietary: ('vegan' | 'vegetarian' | 'gluten-free' | 'non-vegetarian' | 'dairy' | 'gluten')[];
     spiceLevel?: 0 | 1 | 2 | 3;
     isChefSpecial?: boolean;
     isBestseller?: boolean;
@@ -131,6 +142,7 @@ export interface OrderItem {
     category?: string;
     selectedCustomizations?: { name: string; price: number }[];
     notes?: string;
+    paidQuantity?: number;
 }
 
 export interface CartItem extends MenuItem {
@@ -170,6 +182,7 @@ export interface Reservation {
     tableId?: string;
     tableName?: string;
     notes?: string;
+    guests?: number;
     status: 'pending' | 'confirmed' | 'cancelled' | 'completed';
     createdAt: Date;
 }
