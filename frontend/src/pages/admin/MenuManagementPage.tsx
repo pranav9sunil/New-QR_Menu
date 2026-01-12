@@ -28,6 +28,7 @@ import {
 } from '@/components/ui/dialog';
 import { Plus, Edit2, Trash2, Settings2, X, Upload } from 'lucide-react';
 import MenuStructureDialog from '@/components/admin/MenuStructureDialog';
+import { Switch } from '@/components/ui/switch';
 
 export default function MenuManagementPage() {
     const { restaurantId } = useAuth();
@@ -297,6 +298,23 @@ export default function MenuManagementPage() {
         }
     };
 
+    const toggleAvailability = async (item: MenuItem) => {
+        try {
+            const newStatus = !item.isAvailable;
+            // Optimistic update
+            setMenuItems(menuItems.map(i => i.id === item.id ? { ...i, isAvailable: newStatus } : i));
+
+            await updateDoc(firestoreDoc(db, 'menu_items', item.id), {
+                isAvailable: newStatus
+            });
+        } catch (error) {
+            console.error('Error toggling availability:', error);
+            // Revert on error
+            setMenuItems(menuItems.map(i => i.id === item.id ? { ...i, isAvailable: item.isAvailable } : i));
+            alert('Failed to update availability');
+        }
+    };
+
     const resetForm = () => {
         setFormData({
             name: '',
@@ -500,7 +518,13 @@ export default function MenuManagementPage() {
                                     // If no subcategories at all, just show flat list logic (by handling 'Other' as implicit root)
                                     if (subcats.length === 0) {
                                         return items.map(item => (
-                                            <MenuItemCard key={item.id} item={item} onEdit={startEdit} onDelete={deleteMenuItem} />
+                                            <MenuItemCard
+                                                key={item.id}
+                                                item={item}
+                                                onEdit={startEdit}
+                                                onDelete={deleteMenuItem}
+                                                onToggleAvailability={toggleAvailability}
+                                            />
                                         ));
                                     }
 
@@ -513,7 +537,13 @@ export default function MenuManagementPage() {
                                                     )}
                                                     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                                                         {grouped[key].map(item => (
-                                                            <MenuItemCard key={item.id} item={item} onEdit={startEdit} onDelete={deleteMenuItem} />
+                                                            <MenuItemCard
+                                                                key={item.id}
+                                                                item={item}
+                                                                onEdit={startEdit}
+                                                                onDelete={deleteMenuItem}
+                                                                onToggleAvailability={toggleAvailability}
+                                                            />
                                                         ))}
                                                     </div>
                                                 </div>
@@ -626,7 +656,7 @@ export default function MenuManagementPage() {
 
             {/* Add/Edit Dialog */}
             <Dialog open={dialogOpen} onOpenChange={(open) => !open && resetForm()}>
-                <DialogContent className="bg-white max-h-[80vh] overflow-y-auto">
+                <DialogContent className="bg-white max-h-[80vh] overflow-y-auto sm:max-w-3xl">
                     <DialogHeader>
                         <DialogTitle>{editingItem ? 'Edit Menu Item' : 'Add Menu Item'}</DialogTitle>
                         <DialogDescription>
@@ -964,13 +994,31 @@ export default function MenuManagementPage() {
     );
 }
 
-function MenuItemCard({ item, onEdit, onDelete }: { item: MenuItem, onEdit: (i: MenuItem) => void, onDelete: (id: string) => void }) {
+function MenuItemCard({
+    item,
+    onEdit,
+    onDelete,
+    onToggleAvailability
+}: {
+    item: MenuItem,
+    onEdit: (i: MenuItem) => void,
+    onDelete: (id: string) => void,
+    onToggleAvailability: (item: MenuItem) => void
+}) {
     return (
-        <Card className="hover:shadow-lg transition-shadow h-full">
+        <Card className={`hover:shadow-lg transition-shadow h-full ${!item.isAvailable ? 'opacity-75 bg-gray-50' : ''}`}>
             <CardHeader className="pb-3">
                 <div className="flex items-start justify-between">
-                    <CardTitle className="text-lg">{item.name}</CardTitle>
-                    <div className="flex gap-1">
+                    <CardTitle className="text-lg line-clamp-1" title={item.name}>
+                        {item.name}
+                    </CardTitle>
+                    <div className="flex gap-2 items-center">
+                        <div onClick={(e) => e.stopPropagation()}>
+                            <Switch
+                                checked={item.isAvailable ?? true}
+                                onCheckedChange={() => onToggleAvailability(item)}
+                            />
+                        </div>
                         <Button
                             variant="ghost"
                             size="icon"
@@ -991,12 +1039,19 @@ function MenuItemCard({ item, onEdit, onDelete }: { item: MenuItem, onEdit: (i: 
                 </div>
             </CardHeader>
             <CardContent>
-                <p className="text-sm text-muted-foreground mb-3 line-clamp-2">
+                <p className="text-sm text-muted-foreground mb-3 line-clamp-2 min-h-[2.5rem]">
                     {item.description}
                 </p>
-                <p className="text-lg font-bold text-primary">
-                    €{item.price.toFixed(2)}
-                </p>
+                <div className="flex justify-between items-center">
+                    <p className="text-lg font-bold text-primary">
+                        €{item.price.toFixed(2)}
+                    </p>
+                    {item.imageUrl && (
+                        <div className="w-12 h-12 rounded-lg overflow-hidden">
+                            <img src={item.imageUrl} alt={item.name} className="w-full h-full object-cover" />
+                        </div>
+                    )}
+                </div>
             </CardContent>
         </Card>
     );
