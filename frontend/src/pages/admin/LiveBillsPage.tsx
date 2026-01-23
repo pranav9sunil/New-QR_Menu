@@ -13,7 +13,7 @@ import {
     onSnapshot,
     serverTimestamp,
 } from 'firebase/firestore';
-import type { Order, MenuItem, OrderItem } from '@/types';
+import type { Order, MenuItem, OrderItem, SessionWithOrders } from '@/types';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -28,14 +28,9 @@ import {
 } from '@/components/ui/dialog';
 import { Plus, Minus, Trash2, Printer, Search, Percent, DollarSign, Users } from 'lucide-react';
 import { jsPDF } from 'jspdf';
+import { printReceipt, categorizeItems, printDirect } from '@/utils/receiptGenerator';
 
-interface SessionWithOrders {
-    sessionId: string;
-    tableName: string;
-    tableId: string;
-    orders: Order[];
-    totalAmount: number;
-}
+
 
 export default function LiveBillsPage() {
     const { restaurantId } = useAuth();
@@ -723,6 +718,78 @@ export default function LiveBillsPage() {
                                                     Bill
                                                 </Button>
                                             </div>
+                                        </div>
+                                        <div className="flex gap-2 mt-4 pt-4 border-t border-gray-100 justify-end">
+                                            <Button
+                                                variant="outline"
+                                                size="sm"
+                                                className="text-emerald-700 border-emerald-200 hover:bg-emerald-50"
+                                                onClick={async () => {
+                                                    const { kitchenItems } = categorizeItems(selectedSession.orders.flatMap(o => o.items));
+                                                    if (kitchenItems.length === 0) {
+                                                        alert('No kitchen items found');
+                                                        return;
+                                                    }
+
+                                                    const kitchenPrinter = printers.find(p => p.type === 'kitchen');
+                                                    if (kitchenPrinter) {
+                                                        try {
+                                                            await printDirect(
+                                                                kitchenPrinter.ipAddress,
+                                                                kitchenPrinter.port,
+                                                                selectedSession,
+                                                                kitchenItems,
+                                                                'KITCHEN TICKET',
+                                                                false
+                                                            );
+                                                            alert('Sent to Kitchen Printer');
+                                                        } catch (err) {
+                                                            console.warn('Bridge failed, using browser print', err);
+                                                            printReceipt(selectedSession, kitchenItems, 'KITCHEN TICKET', false);
+                                                        }
+                                                    } else {
+                                                        printReceipt(selectedSession, kitchenItems, 'KITCHEN TICKET', false);
+                                                    }
+                                                }}
+                                            >
+                                                <Printer className="h-4 w-4 mr-2" />
+                                                Print Kitchen
+                                            </Button>
+                                            <Button
+                                                variant="outline"
+                                                size="sm"
+                                                className="text-purple-700 border-purple-200 hover:bg-purple-50"
+                                                onClick={async () => {
+                                                    const { barItems } = categorizeItems(selectedSession.orders.flatMap(o => o.items));
+                                                    if (barItems.length === 0) {
+                                                        alert('No bar items found');
+                                                        return;
+                                                    }
+
+                                                    const barPrinter = printers.find(p => p.type === 'bar');
+                                                    if (barPrinter) {
+                                                        try {
+                                                            await printDirect(
+                                                                barPrinter.ipAddress,
+                                                                barPrinter.port,
+                                                                selectedSession,
+                                                                barItems,
+                                                                'BAR TICKET',
+                                                                false
+                                                            );
+                                                            alert('Sent to Bar Printer');
+                                                        } catch (err) {
+                                                            console.warn('Bridge failed, using browser print', err);
+                                                            printReceipt(selectedSession, barItems, 'BAR TICKET', false);
+                                                        }
+                                                    } else {
+                                                        printReceipt(selectedSession, barItems, 'BAR TICKET', false);
+                                                    }
+                                                }}
+                                            >
+                                                <Printer className="h-4 w-4 mr-2" />
+                                                Print Bar
+                                            </Button>
                                         </div>
                                     </CardHeader>
                                     <CardContent className="space-y-6">

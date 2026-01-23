@@ -16,6 +16,7 @@ export interface Restaurant {
     categoryTranslations?: Record<string, { es?: string }>;
     // Translations for subcategories: { "Appetizers:Hot": { es: "Calientes" } }
     subcategoryTranslations?: Record<string, { es?: string }>;
+    printers?: PrinterDevice[];
     createdAt: Date;
     updatedAt: Date;
 }
@@ -185,4 +186,21 @@ export interface Reservation {
     guests?: number;
     status: 'pending' | 'confirmed' | 'cancelled' | 'completed';
     createdAt: Date;
+}
+
+export interface PrinterDevice {
+    id: string;
+    name: string;
+    type: 'kitchen' | 'bar' | 'receipt';
+    ipAddress: string;
+    port: string;
+    status: 'online' | 'offline';
+}
+
+export interface SessionWithOrders {
+    sessionId: string;
+    tableName: string;
+    tableId: string;
+    orders: Order[];
+    totalAmount: number;
 }
