@@ -3,7 +3,7 @@ import { db } from '@/config/firebase';
 import { collection, query, getDocs, limit } from 'firebase/firestore';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
-import { ChefHat, FileText, MapPin } from 'lucide-react';
+import { FileText, MapPin } from 'lucide-react';
 import { jsPDF } from 'jspdf';
 import type { MenuItem } from '@/types';
 
@@ -84,8 +84,8 @@ export default function CustomerLanding() {
                     }
 
                     // Item name and price
-                    pdf.text(`${item.name}`, 25, yPosition);
-                    pdf.text(`€${item.price.toFixed(2)}`, 180, yPosition, { align: 'right' });
+                    pdf.text(`${item.name} `, 25, yPosition);
+                    pdf.text(`€${item.price.toFixed(2)} `, 180, yPosition, { align: 'right' });
                     yPosition += 5;
 
                     // Description
@@ -102,7 +102,7 @@ export default function CustomerLanding() {
             });
 
             // Download PDF
-            pdf.save(`${restaurantName.replace(/\s+/g, '-')}-menu.pdf`);
+            pdf.save(`${restaurantName.replace(/\s+/g, '-')} -menu.pdf`);
         } catch (error) {
             console.error('Error generating PDF:', error);
             alert('Failed to generate menu PDF');
@@ -122,15 +122,22 @@ export default function CustomerLanding() {
             {/* Hero Section */}
             <div className="container mx-auto px-4 py-16">
                 <div className="text-center mb-12">
-                    <div className="inline-flex items-center justify-center w-24 h-24 bg-gradient-to-br from-orange-500 to-amber-600 rounded-full mb-6 shadow-2xl">
-                        <ChefHat className="w-12 h-12 text-white" />
+                    <div className="flex justify-center mb-8">
+                        <div className="w-40 h-40 bg-white rounded-full flex items-center justify-center shadow-lg p-1">
+                            <img src="/thali_logo.jpg" alt="Thali Logo" className="w-full h-full rounded-full object-cover" />
+                        </div>
                     </div>
-                    <h1 className="text-5xl md:text-6xl font-bold text-gray-900 mb-4">
-                        {restaurantName}
+                    <h1 className="text-4xl md:text-5xl font-bold text-gray-900 mb-6">
+                        Thali: Authentic Indian Cuisine
                     </h1>
-                    <p className="text-xl text-gray-600 max-w-2xl mx-auto">
-                        Experience seamless dining with our modern QR ordering system
-                    </p>
+                    <div className="max-w-3xl mx-auto space-y-4">
+                        <p className="text-xl text-gray-700 leading-relaxed">
+                            Come and discover the authentic taste of India. Our dishes, made with 100% natural ingredients, will transport you to the essence of traditional Indian cuisine.
+                        </p>
+                        <p className="text-2xl font-semibold text-primary italic">
+                            Swagatam!
+                        </p>
+                    </div>
                 </div>
 
                 {/* Action Cards */}

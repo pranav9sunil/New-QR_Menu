@@ -34,11 +34,11 @@ export default function LoginPage() {
         <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-blue-50 to-indigo-100 p-4">
             <Card className="w-full max-w-md">
                 <CardHeader className="space-y-4 text-center">
-                    <div className="mx-auto w-16 h-16 bg-primary rounded-full flex items-center justify-center">
-                        <ChefHat className="w-8 h-8 text-primary-foreground" />
+                    <div className="mb-4">
+                        <img src="/thali_logo.jpg" alt="Thali Logo" className="w-24 h-24 rounded-full object-cover shadow-lg mx-auto" />
                     </div>
                     <div>
-                        <CardTitle className="text-2xl">QR Ordering System</CardTitle>
+                        <CardTitle className="text-2xl">Thali - Admin</CardTitle>
                         <CardDescription>Admin Dashboard</CardDescription>
                     </div>
                 </CardHeader>

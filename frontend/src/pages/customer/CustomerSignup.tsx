@@ -18,7 +18,6 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { ChefHat } from 'lucide-react';
 import type { TableSession } from '@/types';
 
 export default function CustomerSignup() {
@@ -228,11 +227,16 @@ export default function CustomerSignup() {
     return (
         <div className="min-h-screen bg-gray-50 flex items-center justify-center p-4">
             <Card className="w-full max-w-md">
-                <CardHeader className="text-center">
-                    <div className="mx-auto w-12 h-12 bg-primary rounded-lg flex items-center justify-center mb-4">
-                        <ChefHat className="w-6 h-6 text-primary-foreground" />
+                <CardHeader className="space-y-6 text-center">
+                    <div className="flex justify-center mb-6">
+                        <div className="w-32 h-32 bg-white rounded-full flex items-center justify-center shadow-md p-1">
+                            <img src="/thali_logo.jpg" alt="Thali Logo" className="w-full h-full rounded-full object-cover" />
+                        </div>
                     </div>
-                    <CardTitle>Welcome to {tableName}</CardTitle>
+                    <div>
+                        <p className="text-xl font-bold text-primary">Thali: Authentic Indian Cuisine</p>
+                        <CardTitle className="text-2xl mt-2">Welcome to {tableName}</CardTitle>
+                    </div>
                     <CardDescription>
                         {step === 'signup'
                             ? 'Please enter your details to join the table'

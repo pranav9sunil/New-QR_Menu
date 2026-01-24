@@ -336,11 +336,9 @@ export default function AdminLayout() {
                 </Sheet>
 
                 <div className="flex items-center gap-2">
-                    <div className="w-9 h-9 bg-primary rounded-lg flex items-center justify-center">
-                        <ChefHat className="w-5 h-5 text-primary-foreground" />
-                    </div>
+                    <img src="/thali_logo.jpg" alt="Thali Logo" className="w-10 h-10 rounded-full object-cover bg-white" />
                     <span className="font-semibold text-lg hidden sm:inline-block">
-                        QR Ordering System
+                        Thali Admin
                     </span>
                 </div>
 

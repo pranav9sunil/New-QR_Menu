@@ -724,11 +724,9 @@ export default function MenuOrderPage() {
                             onClick={() => navigate('/')}
                             className="flex items-center gap-2 hover:opacity-80 transition-opacity"
                         >
-                            <div className="w-10 h-10 bg-white/20 backdrop-blur-sm rounded-lg flex items-center justify-center">
-                                <ChefHat className="w-6 h-6 text-white" />
-                            </div>
+                            <img src="/thali_logo.jpg" alt="Thali Logo" className="w-10 h-10 rounded-full object-cover bg-white shadow-sm" />
                             <div className="text-left hidden sm:block">
-                                <div className="font-semibold text-white">{restaurantName}</div>
+                                <div className="font-semibold text-white">Thali: Authentic Indian Cuisine</div>
                                 <div className="text-xs text-white/80">{tableName}</div>
                             </div>
                         </button>
