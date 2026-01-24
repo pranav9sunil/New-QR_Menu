@@ -201,7 +201,7 @@ export const printDirect = async (
         return new Date(ts);
     };
     const sessionData = session as any;
-    const sessionDate = getTimestampDate(sessionData.closedAt) || getTimestampDate(session.createdAt) || new Date();
+    const sessionDate = getTimestampDate(sessionData.closedAt) || getTimestampDate(sessionData.createdAt) || new Date();
     const dateStr = sessionDate.toLocaleString('es-ES', { timeZone: 'Europe/Madrid' });
 
     const payload = {
