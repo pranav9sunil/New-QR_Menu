@@ -23,7 +23,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
 import { Receipt, Calendar, Printer } from 'lucide-react';
-import { jsPDF } from 'jspdf';
+
 
 export default function PastBillsPage() {
     const { restaurantId } = useAuth();
@@ -35,14 +35,28 @@ export default function PastBillsPage() {
     const [selectedSession, setSelectedSession] = useState<{ session: TableSession, orders: Order[] } | null>(null);
     const [detailsOpen, setDetailsOpen] = useState(false);
     const [detailsLoading, setDetailsLoading] = useState(false);
+    const [printers, setPrinters] = useState<any[]>([]);
 
     useEffect(() => {
         if (restaurantId) {
             loadPastSessions();
+            loadPrinters();
         }
     }, [restaurantId, filterType, selectedDate, selectedMonth]);
 
-
+    const loadPrinters = async () => {
+        if (!restaurantId) return;
+        try {
+            const printersRef = collection(db, 'printers');
+            const q = query(printersRef, where('restaurantId', '==', restaurantId));
+            const snapshot = await getDocs(q);
+            const loadedPrinters: any[] = [];
+            snapshot.forEach(doc => loadedPrinters.push({ id: doc.id, ...doc.data() }));
+            setPrinters(loadedPrinters);
+        } catch (error) {
+            console.error('Error loading printers:', error);
+        }
+    };
 
     const loadPastSessions = async () => {
         if (!restaurantId) return;
@@ -246,91 +260,95 @@ export default function PastBillsPage() {
         return summary;
     };
 
-    const handlePrintBill = () => {
+    const handlePrintBill = async () => {
         if (!selectedSession || selectedSession.orders.length === 0) return;
 
         const summary = calculateBillSummary(selectedSession.orders, selectedSession.session);
+        const mappedItems: any[] = summary.items.map((item, index) => ({
+            id: `past-bill-item-${index}`,
+            name: item.name,
+            price: item.price,
+            quantity: item.quantity,
+            selectedCustomizations: [],
+            notes: '',
+            status: 'served'
+        }));
 
+        // Find standard receipt printer (default to first one found)
+        const receiptPrinter = printers.find(p => p.type === 'receipt');
+
+        if (receiptPrinter) {
+            const { printDirect } = await import('@/utils/receiptGenerator');
+            try {
+                await printDirect(
+                    receiptPrinter.ipAddress, // Corrected from ip to ipAddress based on LiveBillsPage usage
+                    receiptPrinter.port || '9100',
+                    selectedSession.session,
+                    mappedItems,
+                    'Final Bill',
+                    true,
+                    { type: receiptPrinter.interfaceType || 'network', name: receiptPrinter.name }
+                );
+                return; // Success
+            } catch (error) {
+                console.error("Bridge print failed, falling back to browser print", error);
+            }
+        }
+
+        // Fallback
+        import('@/utils/receiptGenerator').then(({ printReceipt }) => {
+            printReceipt(selectedSession.session, mappedItems, 'Final Bill');
+        });
+    };
+
+    const handleDownloadPDF = async () => {
+        if (!selectedSession || selectedSession.orders.length === 0) return;
+
+        const summary = calculateBillSummary(selectedSession.orders, selectedSession.session);
+        const mappedItems: any[] = summary.items.map((item, index) => ({
+            id: `past-bill-item-${index}`,
+            name: item.name,
+            price: item.price,
+            quantity: item.quantity,
+            selectedCustomizations: [],
+            notes: '',
+            status: 'served'
+        }));
+
+        const { generateReceiptHtml } = await import('@/utils/receiptGenerator');
+        const htmlContent = generateReceiptHtml(selectedSession.session, mappedItems, 'Final Bill', true);
+
+        const { jsPDF } = await import('jspdf');
         const doc = new jsPDF({
             orientation: 'portrait',
             unit: 'mm',
-            format: [80, 200 + (summary.items.length * 5)] // Dynamic height based on items
+            format: [80, 200]
         });
 
-        let yPos = 10;
-        const lineVal = 5;
+        const tempDiv = document.createElement('div');
+        tempDiv.innerHTML = htmlContent;
+        tempDiv.style.width = '80mm';
+        tempDiv.style.fontSize = '12px';
+        tempDiv.style.fontFamily = 'monospace';
+        document.body.appendChild(tempDiv);
 
-        // Header
-        doc.setFontSize(12);
-        doc.setFont("helvetica", "bold");
-        doc.text("FINAL BILL", 40, yPos, { align: 'center' });
-        yPos += lineVal + 2;
-
-        doc.setFontSize(9);
-        doc.setFont("helvetica", "normal");
-        doc.text(`Table: ${selectedSession.session.tableName}`, 5, yPos);
-        yPos += lineVal;
-        doc.text(`Date: ${formatDate(selectedSession.session.createdAt)}`, 5, yPos);
-        yPos += lineVal + 3;
-
-        // Divider
-        doc.line(5, yPos, 75, yPos);
-        yPos += 3;
-
-        // Items
-        doc.setFontSize(8);
-
-        summary.items.forEach(item => {
-            const name = item.quantity > 1 ? `${item.quantity}x ${item.name}` : item.name;
-            const truncatedName = name.length > 25 ? name.substring(0, 22) + '...' : name;
-
-            doc.text(truncatedName, 5, yPos);
-            doc.text(item.total.toFixed(2), 75, yPos, { align: 'right' });
-            yPos += lineVal;
-        });
-
-        yPos += 2;
-        doc.line(5, yPos, 75, yPos);
-        yPos += 4;
-
-        // Summary Statistics
-        doc.setFontSize(9);
-
-        // Subtotal
-        doc.text("Subtotal:", 5, yPos);
-        doc.text(summary.subtotal.toFixed(2), 75, yPos, { align: 'right' });
-        yPos += lineVal;
-
-        // Tax
-        if (summary.tax > 0) {
-            doc.text("Tax:", 5, yPos);
-            doc.text(summary.tax.toFixed(2), 75, yPos, { align: 'right' });
-            yPos += lineVal;
+        try {
+            await doc.html(tempDiv, {
+                callback: function (doc) {
+                    doc.save(`Bill-${selectedSession.session.tableName}-${selectedSession.session.code}.pdf`);
+                    document.body.removeChild(tempDiv);
+                },
+                x: 0,
+                y: 0,
+                html2canvas: { scale: 0.25 },
+                autoPaging: true,
+                width: 80,
+                windowWidth: 350
+            });
+        } catch (error) {
+            console.error("Error generating PDF:", error);
+            document.body.removeChild(tempDiv);
         }
-
-        // Discount
-        if (summary.discount > 0) {
-            doc.text("Discount:", 5, yPos);
-            doc.text(`-${summary.discount.toFixed(2)}`, 75, yPos, { align: 'right' });
-            yPos += lineVal;
-        }
-
-        // Tip
-        if (summary.tip > 0) {
-            doc.text("Tip:", 5, yPos);
-            doc.text(summary.tip.toFixed(2), 75, yPos, { align: 'right' });
-            yPos += lineVal;
-        }
-
-        yPos += 2;
-        doc.setFont("helvetica", "bold");
-        doc.setFontSize(11);
-        doc.text("TOTAL:", 5, yPos);
-        doc.text(`€${summary.total.toFixed(2)}`, 75, yPos, { align: 'right' });
-
-        // Auto Print logic
-        doc.autoPrint();
-        window.open(doc.output('bloburl'), '_blank');
     };
 
     if (loading) {
@@ -517,12 +535,15 @@ export default function PastBillsPage() {
                                                 </div>
 
                                                 <div className="grid grid-cols-2 gap-3">
-                                                    <Button onClick={handlePrintBill} variant="outline" className="w-full flex gap-2">
+                                                    <Button onClick={handlePrintBill} className="w-full flex gap-2">
                                                         <Printer className="w-4 h-4" />
-                                                        Print Bill
+                                                        Print
                                                     </Button>
-                                                    <Button onClick={() => setDetailsOpen(false)} className="w-full">Close</Button>
+                                                    <Button onClick={handleDownloadPDF} variant="outline" className="w-full flex gap-2">
+                                                        Download PDF
+                                                    </Button>
                                                 </div>
+                                                <Button onClick={() => setDetailsOpen(false)} variant="ghost" className="w-full">Close</Button>
                                             </div>
                                         </>
                                     );

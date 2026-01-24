@@ -3,10 +3,34 @@ import type { OrderItem, SessionWithOrders } from '@/types';
 export const generateReceiptHtml = (
     session: SessionWithOrders,
     items: OrderItem[],
-    title: string = 'Receipt',
+    title: string = 'Receipt', // Fallback, but we will override for Final Bill
     showPrices: boolean = true
 ) => {
     const pageWidth = '80mm';
+
+    // Date Logic: Use session date (Order Paid/Saved Time)
+    let dateObj = new Date();
+    const getTimestampDate = (ts: any) => {
+        if (!ts) return null;
+        if (ts instanceof Date) return ts;
+        if (typeof ts.toDate === 'function') return ts.toDate();
+        if (ts.seconds) return new Date(ts.seconds * 1000);
+        return new Date(ts);
+    };
+
+    const sessionData = session as any; // Cast to access potential closedAt
+    const sessionDate = getTimestampDate(sessionData.closedAt) || getTimestampDate(session.createdAt);
+    if (sessionDate) {
+        dateObj = sessionDate;
+    }
+
+    const dateStr = dateObj.toLocaleString('es-ES', { timeZone: 'Europe/Madrid' });
+
+    // Financial calculations (Tax Included 10%)
+    const total = items.reduce((sum, i) => sum + (i.price * i.quantity), 0);
+    const taxRate = 0.10; // 10%
+    const baseTotal = total / (1 + taxRate);
+    const taxAmount = total - baseTotal;
 
     // Group items by consolidation (same logic as LiveBillsPage)
     // to avoid printing same item multiple times if ordered separately but tracked together?
@@ -14,8 +38,6 @@ export const generateReceiptHtml = (
     // but the user's prompt implies "The Bill" (which usually means consolidated). 
     // However, for "Live Kitchen", it's usually incremental items. 
     // Let's print the specific list of items passed to this function.
-
-    const date = new Date().toLocaleString();
 
     let itemsHtml = '';
     items.forEach(item => {
@@ -34,99 +56,88 @@ export const generateReceiptHtml = (
         `;
     });
 
+    const isFinalBill = title.toUpperCase().includes('BILL') || title.toUpperCase().includes('THALI') || title.toUpperCase().includes('TICKET');
+
+    // Header Content
+    const headerHtml = isFinalBill ? `
+        <div class="title" style="font-size: 16px; font-weight: bold;">THALI : Authentic Indian Cuisine</div>
+        <div class="address" style="font-size: 14px; margin-top: 5px;">Address: Plaza del Realejo,</div>
+        <div class="address" style="font-size: 14px;">Local 1, 18009</div>
+    ` : `<div class="title">${title}</div>`;
+
     return `
 <!DOCTYPE html>
 <html>
 <head>
     <title>${title}</title>
     <style>
-        @page {
-            margin: 0;
-            size: 80mm auto;
-        }
+        @page { margin: 0; size: 80mm auto; }
         body {
+            margin: 0;
+            padding: 0;
+            background: #fff;
+        }
+        .receipt-wrapper {
             font-family: 'Courier New', Courier, monospace;
             width: ${pageWidth};
-            margin: 0 auto;
-            padding: 10px;
-            font-size: 14px;
+            margin: 0 auto; /* Center the wrapper */
+            box-sizing: border-box;
+            padding: 20px 25px; /* Increased padding: Top/Bottom 20px, Left/Right 25px */
+            font-size: 15px;
             line-height: 1.2;
             color: #000;
         }
-        .header {
-            text-align: center;
-            margin-bottom: 20px;
-        }
-        .title {
-            font-size: 20px;
-            font-weight: bold;
-            margin-bottom: 5px;
-        }
-        .meta {
-            font-size: 12px;
-            margin-bottom: 5px;
-        }
-        .divider {
-            border-top: 1px dashed #000;
-            margin: 10px 0;
-        }
-        .item {
-            margin-bottom: 10px;
-        }
-        .row {
-            display: flex;
-            justify-content: space-between;
-            align-items: flex-start;
-        }
-        .qty {
-            width: 30px;
-            font-weight: bold;
-        }
-        .name {
-            flex: 1;
-            font-weight: bold;
-        }
-        .price {
-            width: 60px;
-            text-align: right;
-        }
-        .details {
-            margin-left: 30px;
-            font-size: 12px;
-            color: #333;
-        }
-        .note {
-            margin-left: 30px;
-            font-size: 12px;
-            font-weight: bold;
-            margin-top: 2px;
-        }
-        .footer {
-            text-align: center;
-            margin-top: 20px;
-            font-size: 12px;
-        }
+        .header { text-align: center; margin-bottom: 20px; padding-top: 10px; }
+        .meta { font-size: 13px; margin-top: 15px; text-align: left; }
+        .divider { border-top: 1px dashed #000; margin: 10px 0; }
+        .item { margin-bottom: 8px; }
+        .row { display: flex; justify-content: space-between; align-items: flex-start; }
+        .qty { width: 30px; font-weight: bold; }
+        .name { flex: 1; font-weight: bold; }
+        .price { width: 70px; text-align: right; }
+        .details { margin-left: 30px; font-size: 13px; color: #333; }
+        .note { margin-left: 30px; font-size: 13px; font-weight: bold; margin-top: 2px; }
+        .financials { margin-top: 15px; font-size: 14px; }
+        .total-row { font-size: 18px; font-weight: bold; margin-top: 5px; border-top: 1px solid #000; padding-top: 5px; }
     </style>
 </head>
 <body>
-    <div class="header">
-        <div class="title">${title}</div>
-        <div class="meta">Table: ${session.tableName}</div>
-        <div class="meta">${date}</div>
+    <div class="receipt-wrapper">
+        <div class="header">
+            ${headerHtml}
+            <div class="meta">
+                <div>Table: ${session.tableName}</div>
+                <div>Date: ${dateStr}</div>
+            </div>
+        </div>
+        
+        <div class="divider"></div>
+        
+        ${itemsHtml}
+        
+        <div class="divider"></div>
+        
+        ${showPrices ? `
+        <div class="financials" style="text-align: right;">
+            <div class="row">
+                <span>Base Total:</span>
+                <span>€${baseTotal.toFixed(2)}</span>
+            </div>
+            <div class="row">
+                <span>Tax (10%):</span>
+                <span>€${taxAmount.toFixed(2)}</span>
+            </div>
+            <div class="row total-row" style="font-size: 18px;">
+                <span>TOTAL:</span>
+                <span>€${total.toFixed(2)}</span>
+            </div>
+        </div>
+        ` : ''}
+
+        <div style="text-align:center; margin-top:20px; font-size:14px;">
+            GRACIAS POR SU VISITA
+        </div>
     </div>
-    
-    <div class="divider"></div>
-    
-    ${itemsHtml}
-    
-    <div class="divider"></div>
-    
-    ${showPrices ? `
-    <div class="row">
-        <span style="font-weight:bold">Total:</span>
-        <span class="price" style="font-weight:bold">€${items.reduce((sum, i) => sum + (i.price * i.quantity), 0).toFixed(2)}</span>
-    </div>
-    ` : ''}
 
     <script>
         window.onload = function() {
@@ -175,34 +186,61 @@ export const printDirect = async (
     showPrices: boolean = true,
     options?: { type: 'network' | 'usb'; name?: string }
 ) => {
+    // Financials
+    const total = items.reduce((sum, i) => sum + (i.price * i.quantity), 0);
+    const taxRate = 0.10;
+    const baseTotal = total / (1 + taxRate);
+    const taxAmount = total - baseTotal;
+
+    // Date Logic
+    const getTimestampDate = (ts: any) => {
+        if (!ts) return null;
+        if (ts instanceof Date) return ts;
+        if (typeof ts.toDate === 'function') return ts.toDate();
+        if (ts.seconds) return new Date(ts.seconds * 1000);
+        return new Date(ts);
+    };
+    const sessionData = session as any;
+    const sessionDate = getTimestampDate(sessionData.closedAt) || getTimestampDate(session.createdAt) || new Date();
+    const dateStr = sessionDate.toLocaleString('es-ES', { timeZone: 'Europe/Madrid' });
+
     const payload = {
         printer: {
             type: options?.type || 'network',
             ip: printerIp,
             port: parseInt(printerPort || '9100'),
-            name: options?.name // Only for USB
+            name: options?.name
         },
         data: {
-            title,
-            tableName: session.tableName,
-            showPrices,
-            total: items.reduce((sum, i) => sum + (i.price * i.quantity), 0),
+            header: {
+                title: "THALI : Authentic Indian Cuisine",
+                address: ["Address: Plaza del Realejo,", "Local 1, 18009"],
+                originalTitle: title // Keep original "KITCHEN TICKET" etc if needed for conditional logic
+            },
+            meta: {
+                tableName: session.tableName,
+                date: dateStr
+            },
             items: items.map(item => ({
                 name: item.name,
                 quantity: item.quantity,
                 price: item.price,
                 customizations: item.selectedCustomizations?.map(c => c.name).join(', '),
                 notes: item.notes
-            }))
+            })),
+            financials: showPrices ? {
+                total: total,
+                baseTotal: baseTotal,
+                taxAmount: taxAmount,
+                taxRate: taxRate
+            } : undefined
         }
     };
 
     try {
         const response = await fetch('http://localhost:3001/print', {
             method: 'POST',
-            headers: {
-                'Content-Type': 'application/json'
-            },
+            headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(payload)
         });
 
@@ -210,8 +248,7 @@ export const printDirect = async (
             throw new Error(`Bridge Error: ${response.statusText}`);
         }
 
-        const result = await response.json();
-        return result;
+        return await response.json();
     } catch (error) {
         console.error('Direct Print Error:', error);
         throw error;

@@ -128,10 +128,14 @@ export default function TPVPage() {
 
     // Subscribe to previous orders when table is selected
     useEffect(() => {
+        // Clear orders immediately when table selection changes or is cleared
+        setPreviousOrders([]);
+
         if (!selectedTableId || !restaurantId) {
-            setPreviousOrders([]);
             return;
         }
+
+        let unsubscribeOrders: (() => void) | null = null;
 
         // First, find active session for this table
         const sessionsRef = collection(db, 'sessions');
@@ -141,13 +145,23 @@ export default function TPVPage() {
             where('status', 'in', ['active', 'payment_pending'])
         );
 
+        console.log(`📡 TPV: Subscribing to session for table ${selectedTableId}`);
+
         const unsubscribeSession = onSnapshot(sessionQuery, async (sessionSnapshot) => {
+            // Clean up previous order listener whenever session snapshot updates (e.g. session closed/changed)
+            if (unsubscribeOrders) {
+                unsubscribeOrders();
+                unsubscribeOrders = null;
+            }
+
             if (sessionSnapshot.empty) {
+                console.log('TPV: No active session found for table');
                 setPreviousOrders([]);
                 return;
             }
 
             const sessionId = sessionSnapshot.docs[0].id;
+            console.log(`TPV: Found active session ${sessionId}, subscribing to orders`);
 
             // Subscribe to orders for this session
             const ordersRef = collection(db, 'orders');
@@ -156,7 +170,7 @@ export default function TPVPage() {
                 where('sessionId', '==', sessionId)
             );
 
-            const unsubscribeOrders = onSnapshot(ordersQuery, (ordersSnapshot) => {
+            unsubscribeOrders = onSnapshot(ordersQuery, (ordersSnapshot) => {
                 const orders: Order[] = [];
                 ordersSnapshot.forEach((doc) => {
                     orders.push({ id: doc.id, ...doc.data() } as Order);
@@ -169,11 +183,14 @@ export default function TPVPage() {
                 });
                 setPreviousOrders(orders);
             });
-
-            return () => unsubscribeOrders();
         });
 
-        return () => unsubscribeSession();
+        // Cleanup function
+        return () => {
+            console.log(`TPV: Cleaning up listeners for table ${selectedTableId}`);
+            if (unsubscribeOrders) unsubscribeOrders();
+            unsubscribeSession();
+        };
     }, [selectedTableId, restaurantId]);
 
     const handleAddToCart = (item: MenuItem) => {
@@ -249,7 +266,17 @@ export default function TPVPage() {
     };
 
     const calculateTotal = () => {
-        return cart.reduce((sum, item) => sum + (item.price * item.quantity), 0);
+        const cartTotal = cart.reduce((sum, item) => sum + (Number(item.price) * Number(item.quantity)), 0);
+
+        // Calculate previous orders total by summing items directly to ensure accuracy
+        const previousTotal = previousOrders.reduce((sum, order) => {
+            const orderSum = order.items.reduce((itemSum, item) => {
+                return itemSum + (Number(item.price) * Number(item.quantity));
+            }, 0);
+            return sum + orderSum;
+        }, 0);
+
+        return cartTotal + previousTotal;
     };
 
     const handlePlaceOrder = async () => {
@@ -346,168 +373,6 @@ export default function TPVPage() {
         item.name.toLowerCase().includes(searchQuery.toLowerCase())
     );
 
-    const CartContent = () => (
-        <div className="flex flex-col h-full bg-white rounded-lg shadow-sm border">
-            {/* Table Selector Header */}
-            <div className="p-3 border-b bg-gray-50">
-                <Label className="text-xs text-muted-foreground uppercase tracking-wider mb-1 block">Select Table</Label>
-                <select
-                    className="w-full h-9 rounded-md border border-input bg-background px-3 py-1 text-sm"
-                    value={selectedTableId || ''}
-                    onChange={(e) => setSelectedTableId(e.target.value)}
-                >
-                    <option value="">-- Select Table --</option>
-                    {tables.map(table => (
-                        <option key={table.id} value={table.id}>{table.name}</option>
-                    ))}
-                </select>
-            </div>
-
-            {/* Cart Items - Current Order (Light Green) */}
-            <div className="flex-1 overflow-y-auto p-3 space-y-2 min-h-0">
-                {cart.length === 0 && previousOrders.length === 0 ? (
-                    <div className="text-center text-muted-foreground py-8">
-                        <p>No items added</p>
-                    </div>
-                ) : (
-                    <>
-                        {/* Current Order Items */}
-                        {cart.length > 0 && (
-                            <div className="space-y-2">
-                                <div className="text-xs font-semibold text-green-700 uppercase tracking-wider">Current Order</div>
-                                {cart.map((item, index) => (
-                                    <div key={index} className="flex flex-col gap-1 pb-2 border-b last:border-0 bg-green-50 rounded-lg p-2">
-                                        <div className="flex justify-between items-start w-full">
-                                            <div className="flex-1 min-w-0 pr-2">
-                                                <div className="font-medium text-sm truncate">{item.name}</div>
-                                                <div className="text-[10px] text-muted-foreground leading-tight">
-                                                    €{item.price.toFixed(2)}
-                                                    {item.selectedCustomizations && Object.values(item.selectedCustomizations).flat().length > 0 && (
-                                                        <span className="ml-1">
-                                                            (+{Object.values(item.selectedCustomizations).flat().map(opt => opt.name).join(', ')})
-                                                        </span>
-                                                    )}
-                                                </div>
-                                                {item.notes && (
-                                                    <div className="text-[10px] bg-yellow-50 text-yellow-800 p-0.5 rounded mt-0.5 flex items-start gap-1 inline-block">
-                                                        <PenLine className="h-2.5 w-2.5 mt-0.5 inline" />
-                                                        {item.notes}
-                                                    </div>
-                                                )}
-                                            </div>
-
-                                            <div className="flex items-center gap-2 shrink-0 self-start mt-0.5">
-                                                {/* Quantity Controls */}
-                                                <div className="flex items-center gap-1 bg-white rounded-md h-6 px-1">
-                                                    <button onClick={() => updateQuantity(index, -1)} className="p-0.5 hover:bg-gray-100 rounded transition-colors">
-                                                        <Minus className="h-3 w-3" />
-                                                    </button>
-                                                    <span className="font-medium w-4 text-center text-[10px]">{item.quantity}</span>
-                                                    <button onClick={() => updateQuantity(index, 1)} className="p-0.5 hover:bg-gray-100 rounded transition-colors">
-                                                        <Plus className="h-3 w-3" />
-                                                    </button>
-                                                </div>
-
-                                                {/* Total Price */}
-                                                <div className="font-bold text-sm w-14 text-right">
-                                                    €{(item.price * item.quantity).toFixed(2)}
-                                                </div>
-
-                                                {/* Note Button */}
-                                                <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => openNoteModal(index)} title="Add Note">
-                                                    <PenLine className="h-3 w-3 text-muted-foreground hover:text-primary" />
-                                                </Button>
-                                            </div>
-                                        </div>
-                                    </div>
-                                ))}
-                            </div>
-                        )}
-
-                        {/* Divider between current and previous orders */}
-                        {cart.length > 0 && previousOrders.length > 0 && (
-                            <div className="border-t border-gray-300 my-3" />
-                        )}
-
-                        {/* Previous Orders (Pale Red) - Consolidated */}
-                        {previousOrders.length > 0 && (() => {
-                            // Consolidate all items from all orders
-                            const consolidatedItems: { name: string; price: number; quantity: number; notes?: string; customizations?: string }[] = [];
-
-                            previousOrders.forEach(order => {
-                                order.items.forEach(item => {
-                                    const customizationsKey = item.selectedCustomizations?.map(c => c.name).sort().join(',') || '';
-                                    const existingIndex = consolidatedItems.findIndex(
-                                        ci => ci.name === item.name && ci.price === item.price && ci.customizations === customizationsKey
-                                    );
-
-                                    if (existingIndex >= 0) {
-                                        consolidatedItems[existingIndex].quantity += item.quantity;
-                                    } else {
-                                        consolidatedItems.push({
-                                            name: item.name,
-                                            price: item.price,
-                                            quantity: item.quantity,
-                                            notes: item.notes,
-                                            customizations: customizationsKey
-                                        });
-                                    }
-                                });
-                            });
-
-                            return (
-                                <div className="space-y-2">
-                                    <div className="text-xs font-semibold text-red-700 uppercase tracking-wider">Previous Orders</div>
-                                    {consolidatedItems.map((item, index) => (
-                                        <div key={index} className="flex flex-col gap-1 pb-2 border-b last:border-0 bg-red-50 rounded-lg p-2">
-                                            <div className="flex justify-between items-start w-full">
-                                                <div className="flex-1 min-w-0 pr-2">
-                                                    <div className="font-medium text-sm truncate text-red-900">{item.name}</div>
-                                                    <div className="text-[10px] text-red-700 leading-tight">
-                                                        €{item.price.toFixed(2)} × {item.quantity}
-                                                        {item.customizations && (
-                                                            <span className="ml-1">
-                                                                (+{item.customizations})
-                                                            </span>
-                                                        )}
-                                                    </div>
-                                                    {item.notes && (
-                                                        <div className="text-[10px] bg-yellow-50 text-yellow-800 p-0.5 rounded mt-0.5 flex items-start gap-1 inline-block">
-                                                            <PenLine className="h-2.5 w-2.5 mt-0.5 inline" />
-                                                            {item.notes}
-                                                        </div>
-                                                    )}
-                                                </div>
-                                                <div className="font-bold text-sm w-14 text-right text-red-900">
-                                                    €{(item.price * item.quantity).toFixed(2)}
-                                                </div>
-                                            </div>
-                                        </div>
-                                    ))}
-                                </div>
-                            );
-                        })()}
-                    </>
-                )}
-            </div>
-
-            {/* Footer */}
-            <div className="p-3 bg-gray-50 border-t mt-auto">
-                <div className="flex justify-between items-center mb-3 text-base font-bold">
-                    <span>Total</span>
-                    <span>€{calculateTotal().toFixed(2)}</span>
-                </div>
-                <Button
-                    className="w-full h-10 text-base"
-                    onClick={handlePlaceOrder}
-                    disabled={cart.length === 0 || !selectedTableId}
-                >
-                    Place Order
-                </Button>
-            </div>
-        </div>
-    );
-
     return (
         <div className="flex flex-col lg:flex-row h-full gap-4 relative overflow-hidden">
             {/* Left Side: Menu */}
@@ -581,7 +446,165 @@ export default function TPVPage() {
             {/* Right Side: Order Summary */}
             {/* On mobile/tablet: Fixed height at bottom. On Desktop: Full height sidebar */}
             <div className="w-full lg:w-96 flex-none h-[40vh] lg:h-full">
-                <CartContent />
+                <div className="flex flex-col h-full bg-white rounded-lg shadow-sm border">
+                    {/* Table Selector Header */}
+                    <div className="p-3 border-b bg-gray-50">
+                        <Label className="text-xs text-muted-foreground uppercase tracking-wider mb-1 block">Select Table</Label>
+                        <select
+                            className="w-full h-9 rounded-md border border-input bg-background px-3 py-1 text-sm"
+                            value={selectedTableId || ''}
+                            onChange={(e) => setSelectedTableId(e.target.value)}
+                        >
+                            <option value="">-- Select Table --</option>
+                            {tables.map(table => (
+                                <option key={table.id} value={table.id}>{table.name}</option>
+                            ))}
+                        </select>
+                    </div>
+
+                    {/* Cart Items - Current Order (Light Green) */}
+                    <div className="flex-1 overflow-y-auto p-3 space-y-2 min-h-0">
+                        {cart.length === 0 && previousOrders.length === 0 ? (
+                            <div className="text-center text-muted-foreground py-8">
+                                <p>No items added</p>
+                            </div>
+                        ) : (
+                            <>
+                                {/* Current Order Items */}
+                                {cart.length > 0 && (
+                                    <div className="space-y-2">
+                                        <div className="text-xs font-semibold text-green-700 uppercase tracking-wider">Current Order</div>
+                                        {cart.map((item, index) => (
+                                            <div key={index} className="flex flex-col gap-1 pb-2 border-b last:border-0 bg-green-50 rounded-lg p-2">
+                                                <div className="flex justify-between items-start w-full">
+                                                    <div className="flex-1 min-w-0 pr-2">
+                                                        <div className="font-medium text-sm truncate">{item.name}</div>
+                                                        <div className="text-[10px] text-muted-foreground leading-tight">
+                                                            €{item.price.toFixed(2)}
+                                                            {item.selectedCustomizations && Object.values(item.selectedCustomizations).flat().length > 0 && (
+                                                                <span className="ml-1">
+                                                                    (+{Object.values(item.selectedCustomizations).flat().map(opt => opt.name).join(', ')})
+                                                                </span>
+                                                            )}
+                                                        </div>
+                                                        {item.notes && (
+                                                            <div className="text-[10px] bg-yellow-50 text-yellow-800 p-0.5 rounded mt-0.5 flex items-start gap-1 inline-block">
+                                                                <PenLine className="h-2.5 w-2.5 mt-0.5 inline" />
+                                                                {item.notes}
+                                                            </div>
+                                                        )}
+                                                    </div>
+
+                                                    <div className="flex items-center gap-2 shrink-0 self-start mt-0.5">
+                                                        {/* Quantity Controls */}
+                                                        <div className="flex items-center gap-1 bg-white rounded-md h-6 px-1">
+                                                            <button onClick={() => updateQuantity(index, -1)} className="p-0.5 hover:bg-gray-100 rounded transition-colors">
+                                                                <Minus className="h-3 w-3" />
+                                                            </button>
+                                                            <span className="font-medium w-4 text-center text-[10px]">{item.quantity}</span>
+                                                            <button onClick={() => updateQuantity(index, 1)} className="p-0.5 hover:bg-gray-100 rounded transition-colors">
+                                                                <Plus className="h-3 w-3" />
+                                                            </button>
+                                                        </div>
+
+                                                        {/* Total Price */}
+                                                        <div className="font-bold text-sm w-14 text-right">
+                                                            €{(item.price * item.quantity).toFixed(2)}
+                                                        </div>
+
+                                                        {/* Note Button */}
+                                                        <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => openNoteModal(index)} title="Add Note">
+                                                            <PenLine className="h-3 w-3 text-muted-foreground hover:text-primary" />
+                                                        </Button>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        ))}
+                                    </div>
+                                )}
+
+                                {/* Divider between current and previous orders */}
+                                {cart.length > 0 && previousOrders.length > 0 && (
+                                    <div className="border-t border-gray-300 my-3" />
+                                )}
+
+                                {/* Previous Orders (Pale Red) - Consolidated */}
+                                {previousOrders.length > 0 && (() => {
+                                    // Consolidate all items from all orders
+                                    const consolidatedItems: { name: string; price: number; quantity: number; notes?: string; customizations?: string }[] = [];
+
+                                    previousOrders.forEach(order => {
+                                        order.items.forEach(item => {
+                                            const customizationsKey = item.selectedCustomizations?.map(c => c.name).sort().join(',') || '';
+                                            const existingIndex = consolidatedItems.findIndex(
+                                                ci => ci.name === item.name && ci.price === item.price && ci.customizations === customizationsKey
+                                            );
+
+                                            if (existingIndex >= 0) {
+                                                consolidatedItems[existingIndex].quantity += item.quantity;
+                                            } else {
+                                                consolidatedItems.push({
+                                                    name: item.name,
+                                                    price: item.price,
+                                                    quantity: item.quantity,
+                                                    notes: item.notes,
+                                                    customizations: customizationsKey
+                                                });
+                                            }
+                                        });
+                                    });
+
+                                    return (
+                                        <div className="space-y-2">
+                                            <div className="text-xs font-semibold text-red-700 uppercase tracking-wider">Previous Orders</div>
+                                            {consolidatedItems.map((item, index) => (
+                                                <div key={index} className="flex flex-col gap-1 pb-2 border-b last:border-0 bg-red-50 rounded-lg p-2">
+                                                    <div className="flex justify-between items-start w-full">
+                                                        <div className="flex-1 min-w-0 pr-2">
+                                                            <div className="font-medium text-sm truncate text-red-900">{item.name}</div>
+                                                            <div className="text-[10px] text-red-700 leading-tight">
+                                                                €{item.price.toFixed(2)} × {item.quantity}
+                                                                {item.customizations && (
+                                                                    <span className="ml-1">
+                                                                        (+{item.customizations})
+                                                                    </span>
+                                                                )}
+                                                            </div>
+                                                            {item.notes && (
+                                                                <div className="text-[10px] bg-yellow-50 text-yellow-800 p-0.5 rounded mt-0.5 flex items-start gap-1 inline-block">
+                                                                    <PenLine className="h-2.5 w-2.5 mt-0.5 inline" />
+                                                                    {item.notes}
+                                                                </div>
+                                                            )}
+                                                        </div>
+                                                        <div className="font-bold text-sm w-14 text-right text-red-900">
+                                                            €{(item.price * item.quantity).toFixed(2)}
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    );
+                                })()}
+                            </>
+                        )}
+                    </div>
+
+                    {/* Footer */}
+                    <div className="p-3 bg-gray-50 border-t mt-auto">
+                        <div className="flex justify-between items-center mb-3 text-base font-bold">
+                            <span>Total</span>
+                            <span>€{calculateTotal().toFixed(2)}</span>
+                        </div>
+                        <Button
+                            className="w-full h-10 text-base"
+                            onClick={handlePlaceOrder}
+                            disabled={cart.length === 0 || !selectedTableId}
+                        >
+                            Place Order
+                        </Button>
+                    </div>
+                </div>
             </div>
 
 

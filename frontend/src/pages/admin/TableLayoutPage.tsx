@@ -97,10 +97,50 @@ export default function TableLayoutDesigner() {
     const [isLayoutDropdownOpen, setIsLayoutDropdownOpen] = useState(false);
     const [editingLayout, setEditingLayout] = useState<TableLayout | null>(null);
     const [showEditLayoutDialog, setShowEditLayoutDialog] = useState(false);
+    // Real-time listener for orders of the selected session
+    useEffect(() => {
+        if (!selectedTableSession?.session.id) return;
 
-    // Move Order State
-    const [showMoveDropdown, setShowMoveDropdown] = useState(false);
-    const [movingOrder, setMovingOrder] = useState(false);
+        const ordersRef = collection(db, 'orders');
+        const q = query(
+            ordersRef,
+            where('sessionId', '==', selectedTableSession.session.id)
+        );
+
+        console.log(`🔌 Subscribing to orders for session: ${selectedTableSession.session.id}`);
+
+        const unsubscribe = onSnapshot(q, (snapshot) => {
+            const updatedOrders: Order[] = [];
+            snapshot.forEach((doc) => {
+                updatedOrders.push({ id: doc.id, ...doc.data() } as Order);
+            });
+
+            // Sort by creation time (newest first)
+            updatedOrders.sort((a, b) => {
+                const getDate = (date: any) => {
+                    if (date instanceof Timestamp) return date.toDate();
+                    if (date instanceof Date) return date;
+                    if (date && date.seconds) return new Date(date.seconds * 1000);
+                    return new Date(date || 0);
+                };
+                const dateA = getDate(a.createdAt);
+                const dateB = getDate(b.createdAt);
+                return dateB.getTime() - dateA.getTime();
+            });
+
+            console.log('🔄 Orders updated via snapshot:', updatedOrders.length);
+
+            // Update state while preserving strict equality for other properties to avoid loops
+            setSelectedTableSession(prev => {
+                if (!prev || prev.session.id !== selectedTableSession.session.id) return prev;
+                return { ...prev, orders: updatedOrders };
+            });
+        }, (error) => {
+            console.error('Error listening to session orders:', error);
+        });
+
+        return () => unsubscribe();
+    }, [selectedTableSession?.session.id]);
 
     useEffect(() => {
         console.log('🔍 TableLayoutPage - restaurantId:', restaurantId);

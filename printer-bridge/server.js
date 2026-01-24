@@ -38,83 +38,136 @@ function sanitize(text) {
 function buildReceiptBuffer(data) {
     let commands = [];
 
-    // 1. Initialize
+    // --- 1. Header (Title & Address) ---
     commands.push(CMD.INIT);
     commands.push(CMD.ALIGN_CENTER);
 
-    // 2. Title
+    // Title
     commands.push(CMD.TEXT_BOLD);
     commands.push(CMD.TEXT_DOUBLE_HEIGHT);
-    commands.push(data.title + '\n');
+    const title = data.header && data.header.title ? data.header.title : (data.title || 'Receipt');
+    commands.push(title + '\n');
     commands.push(CMD.TEXT_NORMAL); // Reset
+
+    // Address (if present)
+    if (data.header && data.header.address && Array.isArray(data.header.address)) {
+        commands.push(CMD.TEXT_NORMAL);
+        data.header.address.forEach(line => {
+            commands.push(line + '\n');
+        });
+    }
     commands.push('\n');
 
-    // 3. Metadata (Table & Date)
+    // --- 2. Metadata (Table & Date) ---
+    // User requested: "Table number, time and date of the Bill generated"
+    // Align: Left or Justified? The image shows "Mesa: ..." tightly packed or left. 
+    // Let's do Left Align for clarity.
     commands.push(CMD.ALIGN_LEFT);
-    commands.push(`Table: ${data.tableName}\n`);
-    commands.push(`Date: ${new Date().toLocaleString()}\n`);
+
+    // Fallback for metadata
+    const tableName = data.meta && data.meta.tableName ? data.meta.tableName : (data.tableName || 'Unknown');
+    const dateStr = data.meta && data.meta.date ? data.meta.date : new Date().toLocaleString();
+
+    commands.push(`Table: ${tableName}\n`);
+    commands.push(`Date: ${dateStr}\n`);
     commands.push('------------------------------------------------\n');
 
-    // 4. Items
+    // Headers for columns? Image has "Und. Articulo .... Precio Importe"
+    // Let's try to match that simplified: Qty Item Price
+    // But keeping it simple first.
+
+    // --- 3. Items ---
+    commands.push(CMD.ALIGN_LEFT);
     data.items.forEach(item => {
-        // Line 1: Qty x Name ....... Price
-        // Calculate spacing
-        const qtyStr = `${item.quantity}x `;
-        const priceStr = data.showPrices ? ` ${item.price.toFixed(2)}` : '';
+        // Line format: "1.00  GAMBAS BIRYANI       14.50"
+        const qty = item.quantity;
+        const qtyStr = `${qty}x `; // Using "x" instead of "1.00" for cleaner look, or match image "1.00"? User said "x" in HTML but image has "1.00". Let's stick to "Item xQty" or "Qty x Name". Current: "Qty x Name".
 
-        // POS80 usually has ~48 columns in Font A
-        const maxCols = 42; // Safe margin
-        const spaceForName = maxCols - qtyStr.length - priceStr.length;
+        const priceStr = (item.price * qty).toFixed(2);
 
-        let name = item.name.substring(0, spaceForName);
+        // POS80 Width ~42-48 chars
+        // Format: Qty (4) Name (Variable) Price (8)
 
-        // If name is too short, pad with spaces to align price right
-        // Actually, simple way: Left align Qty+Name, space, then price? 
-        // Let's try flexible spacing.
+        // Name
+        const maxCols = 42;
+        // We print name first then align price right? 
+        // Or Qty Name........Price
 
         commands.push(CMD.TEXT_BOLD);
-        commands.push(qtyStr + name);
 
-        if (data.showPrices) {
-            // Pad spaces
-            const padding = ' '.repeat(Math.max(1, maxCols - (qtyStr.length + name.length + priceStr.length)));
-            commands.push(padding + priceStr);
+        // Print Qty + Name
+        // Smart truncation/padding
+        const leftPart = `${qty}x ${item.name}`;
+
+        if (data.financials) { // If showing prices
+            // Calculate padding
+            const spaceNeeded = maxCols - leftPart.length - priceStr.length;
+            if (spaceNeeded > 0) {
+                commands.push(leftPart + ' '.repeat(spaceNeeded) + priceStr + '\n');
+            } else {
+                // Name too long, wrap or truncate? 
+                // Let's wrap name
+                commands.push(leftPart + '\n');
+                commands.push(CMD.ALIGN_RIGHT);
+                commands.push(priceStr + '\n');
+                commands.push(CMD.ALIGN_LEFT);
+            }
+        } else {
+            commands.push(leftPart + '\n');
         }
-        commands.push('\n');
 
-        // Reset to normal for details/notes
         commands.push(CMD.TEXT_NORMAL);
 
-        // Customizations
+        // Customizations & Notes
         if (item.customizations) {
             commands.push(`  + ${item.customizations}\n`);
         }
-
-        // Notes (Small Font)
         if (item.notes) {
             commands.push(CMD.TEXT_SMALL);
-            commands.push(`  NOTE: ${item.notes}\n`);
-            commands.push(CMD.TEXT_NORMAL); // Reset font
+            commands.push(`  (Note: ${item.notes})\n`);
+            commands.push(CMD.TEXT_NORMAL);
         }
-
-        commands.push('\n'); // Spacing between items
+        // commands.push('\n'); // Single spacing? Image is tight.
     });
 
     commands.push('------------------------------------------------\n');
 
-    // 5. Totals (if enabled)
-    if (data.showPrices && data.total !== undefined) {
+    // --- 4. Financials (Footer) ---
+    if (data.financials) {
+        commands.push(CMD.ALIGN_RIGHT);
+
+        // Base
+        commands.push(`Base Total: ${data.financials.baseTotal.toFixed(2)}\n`);
+
+        // Tax
+        commands.push(`Tax (10%): ${data.financials.taxAmount.toFixed(2)}\n`);
+
+        commands.push('\n');
+
+        // Total
+        commands.push(CMD.TEXT_BOLD);
+        commands.push(CMD.TEXT_DOUBLE_HEIGHT);
+        // commands.push(CMD.TEXT_DOUBLE_WIDTH); // Too wide maybe?
+        commands.push(`TOTAL: ${data.financials.total.toFixed(2)} EUR\n`);
+        commands.push(CMD.TEXT_NORMAL);
+    }
+    else if (data.total !== undefined) {
+        // Legacy/Full Fallback
         commands.push(CMD.ALIGN_RIGHT);
         commands.push(CMD.TEXT_BOLD);
         commands.push(`TOTAL: ${data.total.toFixed(2)}\n`);
     }
 
-    // 6. Footer feed & Cut
-    commands.push(CMD.INIT); // Reset formatting
-    commands.push('\n\n\n\n'); // Feed lines
+    commands.push('\n');
+    commands.push(CMD.ALIGN_CENTER);
+    commands.push('GRACIAS POR SU VISITA\n');
+
+    // --- 5. Cut ---
+    commands.push(CMD.INIT);
+    commands.push('\n\n\n\n');
     commands.push(CMD.CUT);
 
-    return Buffer.concat(commands.map(c => Buffer.from(c, 'binary'))); // Latin-1 usually binary safe
+    return Buffer.concat(commands.map(c => Buffer.from(c, 'binary')));
 }
 
 app.post('/print', (req, res) => {

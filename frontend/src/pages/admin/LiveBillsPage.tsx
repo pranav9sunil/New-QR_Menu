@@ -56,6 +56,14 @@ export default function LiveBillsPage() {
     const [printModalOpen, setPrintModalOpen] = useState(false);
     const [selectedPrinter, setSelectedPrinter] = useState<string>('');
 
+    // Auto-select receipt printer when modal opens
+    useEffect(() => {
+        if (printModalOpen && printers.length > 0) {
+            const receipt = printers.find(p => p.type === 'receipt');
+            if (receipt) setSelectedPrinter(receipt.id);
+        }
+    }, [printModalOpen, printers]);
+
     // Split Bill Modal
     const [splitBillModalOpen, setSplitBillModalOpen] = useState(false);
     const [splitMode, setSplitMode] = useState<'item' | 'amount'>('item');
@@ -209,7 +217,12 @@ export default function LiveBillsPage() {
         if (itemIndex === -1) return;
 
         const newQuantity = order.items[itemIndex].quantity + delta;
-        if (newQuantity < 1) return;
+
+        // If quantity becomes 0 or less, treat as removal
+        if (newQuantity < 1) {
+            await handleRemoveConsolidatedItem(orderId, itemName, itemPrice, customizations, true);
+            return;
+        }
 
         try {
             const updatedItems = [...order.items];
@@ -235,9 +248,9 @@ export default function LiveBillsPage() {
     };
 
     // Handler to remove an item from an order
-    const handleRemoveConsolidatedItem = async (orderId: string, itemName: string, itemPrice: number, customizations: string) => {
+    const handleRemoveConsolidatedItem = async (orderId: string, itemName: string, itemPrice: number, customizations: string, skipConfirm = false) => {
         if (!selectedSession) return;
-        if (!confirm('Remove this item from the order?')) return;
+        if (!skipConfirm && !confirm('Remove this item from the order?')) return;
 
         const order = selectedSession.orders.find(o => o.id === orderId);
         if (!order) return;
@@ -390,93 +403,141 @@ export default function LiveBillsPage() {
     };
 
     // Print bill WITHOUT closing the order (intermediate print)
-    const handlePrintOnly = () => {
+    const handlePrintOnly = async () => {
         if (!selectedSession) return;
 
-        try {
-            // Generate PDF
-            const pdf = new jsPDF();
-            let yPos = 20;
-
-            pdf.setFontSize(20);
-            pdf.text('Bill', 105, yPos, { align: 'center' });
-            yPos += 15;
-
-            pdf.setFontSize(12);
-            pdf.text(`Table: ${selectedSession.tableName}`, 20, yPos);
-            yPos += 10;
-            pdf.text(`Date: ${new Date().toLocaleString()}`, 20, yPos);
-            yPos += 15;
-
-            pdf.setFontSize(10);
-            pdf.text('Item', 20, yPos);
-            pdf.text('Qty', 120, yPos);
-            pdf.text('Price', 150, yPos);
-            pdf.text('Total', 180, yPos);
-            yPos += 5;
-            pdf.line(20, yPos, 190, yPos);
-            yPos += 10;
-
-            for (const order of selectedSession.orders) {
-                for (const item of order.items) {
-                    const remainingQty = item.quantity - (item.paidQuantity || 0);
-                    if (remainingQty <= 0) continue;
-
-                    pdf.text(item.name, 20, yPos);
-                    pdf.text(remainingQty.toString(), 120, yPos);
-                    pdf.text(`€${item.price.toFixed(2)}`, 150, yPos);
-                    pdf.text(`€${(item.price * remainingQty).toFixed(2)}`, 180, yPos);
-                    yPos += 7;
+        // Consolidate Items for the Bill
+        // Note: We duplicate logic here, ideally move to helper, but for now inline is fine for this tool
+        const consolidatedItems: any[] = [];
+        selectedSession.orders.forEach(order => {
+            order.items.forEach(item => {
+                const remainingQty = item.quantity - (item.paidQuantity || 0);
+                if (remainingQty <= 0) return;
+                const customizations = item.selectedCustomizations?.map(c => c.name).sort().join(',') || '';
+                const existing = consolidatedItems.find(i => i.name === item.name && i.price === item.price && (i.selectedCustomizations?.map((c: any) => c.name).sort().join(',') || '') === customizations);
+                if (existing) {
+                    existing.quantity += remainingQty;
+                } else {
+                    consolidatedItems.push({
+                        ...item,
+                        quantity: remainingQty,
+                        id: item.menuItemId || 'item',
+                        status: 'served'
+                    });
                 }
+            });
+        });
+
+        // Try to find a receipt printer
+        const receiptPrinter = printers.find(p => p.type === 'receipt');
+
+        if (receiptPrinter) {
+            try {
+                await printDirect(
+                    receiptPrinter.ipAddress,
+                    receiptPrinter.port || '9100',
+                    selectedSession,
+                    consolidatedItems,
+                    'Bill',
+                    true,
+                    { type: receiptPrinter.interfaceType || 'network', name: receiptPrinter.name }
+                );
+                return;
+            } catch (e) {
+                console.error("Bridge print failed, falling back", e);
             }
-
-            yPos += 5;
-            pdf.line(20, yPos, 190, yPos);
-            yPos += 10;
-
-            const firstOrder = selectedSession.orders[0];
-            const subtotal = selectedSession.orders.reduce((sum, o) =>
-                sum + o.items.reduce((s, i) => s + i.price * (i.quantity - (i.paidQuantity || 0)), 0), 0
-            );
-            const tax = subtotal * 0.08;
-            const discount = firstOrder.discount || 0;
-            const discountAmount = firstOrder.discountType === 'percentage'
-                ? (subtotal + tax) * (discount / 100)
-                : discount;
-            const total = Math.max(0, subtotal + tax - discountAmount);
-
-            pdf.text('Subtotal:', 140, yPos);
-            pdf.text(`€${subtotal.toFixed(2)}`, 180, yPos);
-            yPos += 7;
-            pdf.text('Tax (8%):', 140, yPos);
-            pdf.text(`€${tax.toFixed(2)}`, 180, yPos);
-            yPos += 7;
-
-            if (discount > 0) {
-                pdf.text(`Discount:`, 120, yPos);
-                pdf.text(`-€${discountAmount.toFixed(2)}`, 180, yPos);
-                yPos += 7;
-            }
-
-            yPos += 5;
-            pdf.setFontSize(14);
-            pdf.text(`Total:`, 120, yPos);
-            pdf.text(`€${total.toFixed(2)}`, 180, yPos);
-
-            // Download PDF (no order status changes)
-            pdf.save(`bill-${selectedSession.tableName}-${Date.now()}.pdf`);
-
-        } catch (error) {
-            console.error('Error printing bill:', error);
         }
+
+        // Fallback to browser print/receipt gen
+        printReceipt(selectedSession, consolidatedItems, 'Bill', true);
     };
 
     // Print FINAL bill and mark order as completed
     const handlePrintBill = async () => {
         if (!selectedSession) return;
 
+        const consolidatedItems: any[] = [];
+        selectedSession.orders.forEach(order => {
+            order.items.forEach(item => {
+                const remainingQty = item.quantity - (item.paidQuantity || 0);
+                if (remainingQty <= 0) return;
+                const customizations = item.selectedCustomizations?.map(c => c.name).sort().join(',') || '';
+                const existing = consolidatedItems.find(i => i.name === item.name && i.price === item.price && (i.selectedCustomizations?.map((c: any) => c.name).sort().join(',') || '') === customizations);
+                if (existing) {
+                    existing.quantity += remainingQty;
+                } else {
+                    consolidatedItems.push({
+                        ...item,
+                        quantity: remainingQty,
+                        id: item.menuItemId || 'item',
+                        status: 'served'
+                    });
+                }
+            });
+        });
+
+        const performClose = async () => {
+            try {
+                // Mark orders as completed
+                for (const order of selectedSession.orders) {
+                    await updateDoc(doc(db, 'orders', order.id), {
+                        status: 'completed',
+                    });
+                }
+
+                // Update session status
+                if (selectedSession.sessionId) {
+                    await updateDoc(doc(db, 'sessions', selectedSession.sessionId), {
+                        status: 'closed',
+                        closedAt: serverTimestamp() // Important for past bills sorting
+                    });
+                }
+
+                // Mark table as available
+                await updateDoc(doc(db, 'tables', selectedSession.tableId), {
+                    isOccupied: false,
+                });
+
+                setPrintModalOpen(false);
+                setSelectedSession(null);
+                loadData();
+            } catch (error) {
+                console.error('Error closing session:', error);
+                alert('Printed successfully but failed to close session. Please try again.');
+            }
+        };
+
+        // If specific printer selected in modal (or default)
+        if (selectedPrinter) {
+            const printer = printers.find(p => p.id === selectedPrinter);
+            if (printer) {
+                try {
+                    await printDirect(
+                        printer.ipAddress,
+                        printer.port || '9100',
+                        selectedSession,
+                        consolidatedItems,
+                        'FINAL BILL',
+                        true,
+                        { type: printer.interfaceType || 'network', name: printer.name }
+                    );
+                    // If print success, close session
+                    await performClose();
+                    return;
+                } catch (e) {
+                    console.error("Bridge print failed", e);
+                    if (!confirm("Printing failed. Do you want to close the session anyway?")) {
+                        return;
+                    }
+                    await performClose();
+                    return;
+                }
+            }
+        }
+
+        // If "Download PDF Only" or no printer selected but proceeded
+        // Use jsPDF generation as before
         try {
-            // Generate PDF
             const pdf = new jsPDF();
             let yPos = 20;
 
@@ -499,30 +560,23 @@ export default function LiveBillsPage() {
             pdf.line(20, yPos, 190, yPos);
             yPos += 10;
 
-            for (const order of selectedSession.orders) {
-                for (const item of order.items) {
-                    const remainingQty = item.quantity - (item.paidQuantity || 0);
-                    if (remainingQty <= 0) continue;
-
-                    pdf.text(item.name, 20, yPos);
-                    pdf.text(remainingQty.toString(), 120, yPos);
-                    pdf.text(`€${item.price.toFixed(2)}`, 150, yPos);
-                    pdf.text(`€${(item.price * remainingQty).toFixed(2)}`, 180, yPos);
-                    yPos += 7;
-                }
-            }
+            consolidatedItems.forEach(item => {
+                pdf.text(item.name, 20, yPos);
+                pdf.text(item.quantity.toString(), 120, yPos);
+                pdf.text(`€${item.price.toFixed(2)}`, 150, yPos);
+                pdf.text(`€${(item.price * item.quantity).toFixed(2)}`, 180, yPos);
+                yPos += 7;
+            });
 
             yPos += 5;
             pdf.line(20, yPos, 190, yPos);
             yPos += 10;
 
             const firstOrder = selectedSession.orders[0];
-            const subtotal = selectedSession.orders.reduce((sum, o) =>
-                sum + o.items.reduce((s, i) => s + i.price * (i.quantity - (i.paidQuantity || 0)), 0), 0
-            );
+            const subtotal = consolidatedItems.reduce((sum, i) => sum + (i.price * i.quantity), 0);
             const tax = subtotal * 0.08; // Assuming 8%
-            const discount = firstOrder.discount || 0;
-            const discountAmount = firstOrder.discountType === 'percentage'
+            const discount = firstOrder?.discount || 0;
+            const discountAmount = firstOrder?.discountType === 'percentage'
                 ? (subtotal + tax) * (discount / 100)
                 : discount;
             const total = Math.max(0, subtotal + tax - discountAmount);
@@ -548,29 +602,11 @@ export default function LiveBillsPage() {
             // Download PDF
             pdf.save(`bill-${selectedSession.tableName}-${Date.now()}.pdf`);
 
-            // Mark orders as completed
-            for (const order of selectedSession.orders) {
-                await updateDoc(doc(db, 'orders', order.id), {
-                    status: 'completed',
-                });
-            }
+            // Perform Close
+            await performClose();
 
-            // Update session status
-            if (selectedSession.sessionId) {
-                await updateDoc(doc(db, 'sessions', selectedSession.sessionId), {
-                    status: 'closed',
-                });
-            }
-
-            // Mark table as available
-            await updateDoc(doc(db, 'tables', selectedSession.tableId), {
-                isOccupied: false,
-            });
-
-            setPrintModalOpen(false);
-            setSelectedSession(null);
         } catch (error) {
-            console.error('Error printing bill:', error);
+            console.error('Error generating PDF:', error);
         }
     };
 
