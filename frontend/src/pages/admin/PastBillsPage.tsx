@@ -274,6 +274,13 @@ export default function PastBillsPage() {
             status: 'served'
         }));
 
+        // Construct compatible session object
+        const fullSession = {
+            ...selectedSession.session,
+            sessionId: selectedSession.session.id, // Ensure ID is mapped if needed
+            orders: selectedSession.orders
+        } as any;
+
         // Find standard receipt printer (default to first one found)
         const receiptPrinter = printers.find(p => p.type === 'receipt');
 
@@ -283,7 +290,7 @@ export default function PastBillsPage() {
                 await printDirect(
                     receiptPrinter.ipAddress, // Corrected from ip to ipAddress based on LiveBillsPage usage
                     receiptPrinter.port || '9100',
-                    selectedSession.session,
+                    fullSession,
                     mappedItems,
                     'Final Bill',
                     true,
@@ -297,7 +304,7 @@ export default function PastBillsPage() {
 
         // Fallback
         import('@/utils/receiptGenerator').then(({ printReceipt }) => {
-            printReceipt(selectedSession.session, mappedItems, 'Final Bill');
+            printReceipt(fullSession, mappedItems, 'Final Bill');
         });
     };
 
@@ -315,8 +322,14 @@ export default function PastBillsPage() {
             status: 'served'
         }));
 
+        const fullSession = {
+            ...selectedSession.session,
+            sessionId: selectedSession.session.id,
+            orders: selectedSession.orders
+        } as any;
+
         const { generateReceiptHtml } = await import('@/utils/receiptGenerator');
-        const htmlContent = generateReceiptHtml(selectedSession.session, mappedItems, 'Final Bill', true);
+        const htmlContent = generateReceiptHtml(fullSession, mappedItems, 'Final Bill', true);
 
         const { jsPDF } = await import('jspdf');
         const doc = new jsPDF({

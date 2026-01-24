@@ -18,8 +18,8 @@ export const generateReceiptHtml = (
         return new Date(ts);
     };
 
-    const sessionData = session as any; // Cast to access potential closedAt
-    const sessionDate = getTimestampDate(sessionData.closedAt) || getTimestampDate(session.createdAt);
+    const sessionData = session as any; // Cast to access potential closedAt/createdAt
+    const sessionDate = getTimestampDate(sessionData.closedAt) || getTimestampDate(sessionData.createdAt); // Use sessionData for createdAt too to be safe
     if (sessionDate) {
         dateObj = sessionDate;
     }

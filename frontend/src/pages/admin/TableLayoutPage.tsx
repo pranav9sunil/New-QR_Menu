@@ -97,6 +97,12 @@ export default function TableLayoutDesigner() {
     const [isLayoutDropdownOpen, setIsLayoutDropdownOpen] = useState(false);
     const [editingLayout, setEditingLayout] = useState<TableLayout | null>(null);
     const [showEditLayoutDialog, setShowEditLayoutDialog] = useState(false);
+    const [isConfirmingClose, setIsConfirmingClose] = useState(false);
+
+    // Initial state for moving orders (Fixing build error)
+    const [showMoveDropdown, setShowMoveDropdown] = useState(false);
+    const [movingOrder, setMovingOrder] = useState<any | null>(null);
+
     // Real-time listener for orders of the selected session
     useEffect(() => {
         if (!selectedTableSession?.session.id) return;
