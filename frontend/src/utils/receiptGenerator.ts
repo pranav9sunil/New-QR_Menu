@@ -172,11 +172,16 @@ export const printDirect = async (
     session: SessionWithOrders,
     items: OrderItem[],
     title: string,
-    showPrices: boolean = true
+    showPrices: boolean = true,
+    options?: { type: 'network' | 'usb'; name?: string }
 ) => {
     const payload = {
-        ip: printerIp,
-        port: parseInt(printerPort || '9100'),
+        printer: {
+            type: options?.type || 'network',
+            ip: printerIp,
+            port: parseInt(printerPort || '9100'),
+            name: options?.name // Only for USB
+        },
         data: {
             title,
             tableName: session.tableName,
