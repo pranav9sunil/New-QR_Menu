@@ -2,6 +2,10 @@ const express = require('express');
 const cors = require('cors');
 const net = require('net');
 const bodyParser = require('body-parser');
+const fs = require('fs');
+const os = require('os');
+const path = require('path');
+const { exec } = require('child_process');
 
 const app = express();
 const PORT = 3001;
@@ -114,38 +118,94 @@ function buildReceiptBuffer(data) {
 }
 
 app.post('/print', (req, res) => {
-    const { ip, port, data } = req.body;
+    // Support new payload structure: { printer: { type, ip, port, name }, data: ... }
+    // Fallback for legacy: { ip, port, data } -> treat as network
+    let printer = req.body.printer;
+    let data = req.body.data;
 
-    if (!ip || !data) {
-        return res.status(400).json({ error: 'Missing IP or data' });
+    // Legacy fallback
+    if (!printer && req.body.ip) {
+        printer = {
+            type: 'network',
+            ip: req.body.ip,
+            port: req.body.port
+        };
     }
 
-    const targetPort = port || 9100;
+    if (!printer || !data) {
+        return res.status(400).json({ error: 'Missing printer config or data' });
+    }
+
+    const buffer = buildReceiptBuffer(data);
+
+    // Handle USB (Windows only usually)
+    if (printer.type === 'usb') {
+        if (os.platform() !== 'win32') {
+            return res.status(400).json({ error: 'USB printing currently supported on Windows only via this bridge.' });
+        }
+        if (!printer.name) {
+            return res.status(400).json({ error: 'Missing printer name for USB printing' });
+        }
+
+        const tempFilePath = path.join(os.tmpdir(), `receipt_${Date.now()}.bin`);
+        const scriptPath = path.join(__dirname, 'print_raw.ps1');
+
+        try {
+            fs.writeFileSync(tempFilePath, buffer);
+
+            // Execute PowerShell script
+            const psCommand = `powershell -ExecutionPolicy Bypass -File "${scriptPath}" -PrinterName "${printer.name}" -FilePath "${tempFilePath}"`;
+
+            console.log(`Printing to USB: ${printer.name}`);
+            exec(psCommand, (error, stdout, stderr) => {
+                // Cleanup
+                try { fs.unlinkSync(tempFilePath); } catch (e) { }
+
+                if (error) {
+                    console.error('USB Print Error:', stderr || error.message);
+                    return res.status(500).json({ error: 'Failed to print to USB: ' + (stderr || error.message) });
+                }
+                console.log('USB Print Success');
+                res.json({ success: true });
+            });
+        } catch (err) {
+            console.error('File Write Error:', err);
+            return res.status(500).json({ error: 'Bridge internal error' });
+        }
+        return;
+    }
+
+    // Handle Network (Ethernet/Wi-Fi)
+    const targetIp = printer.ip;
+    const targetPort = printer.port || 9100;
     const client = new net.Socket();
 
-    console.log(`Connecting to printer at ${ip}:${targetPort}...`);
+    console.log(`Connecting to network printer at ${targetIp}:${targetPort}...`);
 
-    client.connect(targetPort, ip, () => {
+    const timeout = setTimeout(() => {
+        client.destroy();
+        console.error('Connection timed out');
+        if (!res.headersSent) res.status(500).json({ error: 'Printer connection timeout' });
+    }, 5000);
+
+    client.connect(targetPort, targetIp, () => {
+        clearTimeout(timeout);
         console.log('Connected. Sending data...');
-        const buffer = buildReceiptBuffer(data);
         client.write(buffer, () => {
             console.log('Data sent. Closing connection.');
             client.end();
-            res.json({ success: true });
+            if (!res.headersSent) res.json({ success: true });
         });
     });
 
     client.on('error', (err) => {
+        clearTimeout(timeout);
         console.error('Printer connection error:', err);
-        res.status(500).json({ error: 'Failed to connect to printer: ' + err.message });
-    });
-
-    client.on('timeout', () => {
-        console.error('Printer connection timeout');
-        client.destroy();
-        res.status(500).json({ error: 'Printer connection timeout' });
+        if (!res.headersSent) res.status(500).json({ error: 'Failed to connect to printer: ' + err.message });
     });
 });
+
+
 
 app.listen(PORT, () => {
     console.log(`Printer Bridge Server running on http://localhost:${PORT}`);

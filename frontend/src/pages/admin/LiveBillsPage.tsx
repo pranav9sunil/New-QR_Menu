@@ -730,17 +730,21 @@ export default function LiveBillsPage() {
                                                         alert('No kitchen items found');
                                                         return;
                                                     }
-
+                                                    // Find Kitchen Printer
                                                     const kitchenPrinter = printers.find(p => p.type === 'kitchen');
                                                     if (kitchenPrinter) {
                                                         try {
                                                             await printDirect(
-                                                                kitchenPrinter.ipAddress,
-                                                                kitchenPrinter.port,
+                                                                kitchenPrinter.ipAddress || 'localhost',
+                                                                kitchenPrinter.port || '9100',
                                                                 selectedSession,
                                                                 kitchenItems,
                                                                 'KITCHEN TICKET',
-                                                                false
+                                                                false,
+                                                                {
+                                                                    type: kitchenPrinter.interfaceType || 'network',
+                                                                    name: kitchenPrinter.serviceName
+                                                                }
                                                             );
                                                             alert('Sent to Kitchen Printer');
                                                         } catch (err) {
@@ -748,6 +752,7 @@ export default function LiveBillsPage() {
                                                             printReceipt(selectedSession, kitchenItems, 'KITCHEN TICKET', false);
                                                         }
                                                     } else {
+                                                        // No Kitchen Printer config -> Fallback
                                                         printReceipt(selectedSession, kitchenItems, 'KITCHEN TICKET', false);
                                                     }
                                                 }}
@@ -766,16 +771,21 @@ export default function LiveBillsPage() {
                                                         return;
                                                     }
 
+                                                    // Find Bar Printer
                                                     const barPrinter = printers.find(p => p.type === 'bar');
                                                     if (barPrinter) {
                                                         try {
                                                             await printDirect(
-                                                                barPrinter.ipAddress,
-                                                                barPrinter.port,
+                                                                barPrinter.ipAddress || 'localhost',
+                                                                barPrinter.port || '9100',
                                                                 selectedSession,
                                                                 barItems,
                                                                 'BAR TICKET',
-                                                                false
+                                                                false,
+                                                                {
+                                                                    type: barPrinter.interfaceType || 'network',
+                                                                    name: barPrinter.serviceName
+                                                                }
                                                             );
                                                             alert('Sent to Bar Printer');
                                                         } catch (err) {

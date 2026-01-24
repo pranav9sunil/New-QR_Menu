@@ -46,22 +46,16 @@ Whenever you open your restaurant, you must start the bridge.
 3.  Keep this window open. You will see: `Printer Bridge Server running on http://localhost:3001`
 
 **Option B: Auto-Start (Recommended)**
-To make it run automatically when the computer turns on (using PM2):
+To make it start automatically when the computer turns on, we will use the **Windows Startup Folder**. This is easier and more reliable than PM2 on Windows.
 
-1.  Install PM2 globaly:
-    ```bash
-    npm install -g pm2
-    ```
-2.  Start the bridge:
-    ```bash
-    pm2 start server.js --name "printer-bridge"
-    ```
-3.  Save the list so it starts on reboot:
-    ```bash
-    pm2 save
-    pm2 startup
-    ```
-    (Follow the instructions output by the `pm2 startup` command).
+1.  **Right-click** the `start_bridge.bat` file you just created.
+2.  Choose **Create Shortcut** (it will create a file like `start_bridge - Shortcut`).
+3.  Press **Windows Key + R** on your keyboard.
+4.  Type `shell:startup` and press **Enter**.
+    *   *This opens the folder where Windows looks for programs to start automatically.*
+5.  **Drag and drop** the shortcut you created into this folder.
+
+That's it! Next time you restart the computer, the Printer Bridge will open automatically.
 
 ## Verifying It Works
 1.  Ensure the bridge is running.
@@ -79,6 +73,14 @@ To make it run automatically when the computer turns on (using PM2):
 ## Troubleshooting
 *   **"Direct print failed"**: Check if the black terminal window with `npm start` is running.
 *   **"Printer connection timeout"**: Check if your computer is on the same Wi-Fi/Ethernet as the printer. Ping the printer IP from your terminal: `ping 192.168.10.15`
+*   **Windows Error: "npm.ps1 cannot be loaded because running scripts is disabled"**:
+    *   This is a Windows security setting in PowerShell.
+    *   **Fix:** Run this command in PowerShell:
+        ```powershell
+        Set-ExecutionPolicy -Scope CurrentUser -ExecutionPolicy RemoteSigned
+        ```
+    *   Press `Y` when asked. Then try `npm install` again.
+    *   *Alternative:* Use **Command Prompt (cmd)** instead of PowerShell.
 
 ## Moving to Another Computer
 If you want to run this bridge on a different computer (e.g., the dedicated POS terminal):

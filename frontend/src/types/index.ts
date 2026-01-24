@@ -192,8 +192,10 @@ export interface PrinterDevice {
     id: string;
     name: string;
     type: 'kitchen' | 'bar' | 'receipt';
-    ipAddress: string;
-    port: string;
+    interfaceType: 'network' | 'usb'; // New field
+    ipAddress?: string;
+    port?: string;
+    serviceName?: string; // For USB: OS Printer Name (e.g., "TICKETS")
     status: 'online' | 'offline';
 }
 

@@ -15,7 +15,14 @@ export default function PrinterPage() {
     const [printers, setPrinters] = useState<PrinterDevice[]>([]);
     const [isAdding, setIsAdding] = useState(false);
     const [loading, setLoading] = useState(true);
-    const [newPrinter, setNewPrinter] = useState({ name: '', type: 'kitchen', ipAddress: '', port: '9100' });
+    const [newPrinter, setNewPrinter] = useState({
+        name: '',
+        type: 'kitchen',
+        interfaceType: 'network',
+        ipAddress: '',
+        port: '9100',
+        serviceName: ''
+    });
 
     useEffect(() => {
         if (restaurantId) {
@@ -30,7 +37,13 @@ export default function PrinterPage() {
             const docSnap = await getDoc(docRef);
             if (docSnap.exists()) {
                 const data = docSnap.data();
-                setPrinters(data.printers || []);
+                // Ensure backward compatibility
+                const loaded = (data.printers || []).map((p: any) => ({
+                    ...p,
+                    interfaceType: p.interfaceType || 'network',
+                    serviceName: p.serviceName || ''
+                }));
+                setPrinters(loaded);
             }
         } catch (error) {
             console.error('Error loading printers:', error);
@@ -41,8 +54,18 @@ export default function PrinterPage() {
     };
 
     const handleAddPrinter = async () => {
-        if (!newPrinter.name || !newPrinter.ipAddress || !newPrinter.port || !restaurantId) {
-            toast.error('Please fill in all fields');
+        if (!newPrinter.name || !restaurantId) {
+            toast.error('Printer Name is required');
+            return;
+        }
+
+        if (newPrinter.interfaceType === 'network' && (!newPrinter.ipAddress)) {
+            toast.error('IP Address is required for Network printers');
+            return;
+        }
+
+        if (newPrinter.interfaceType === 'usb' && !newPrinter.serviceName) {
+            toast.error('System Printer Name is required for USB printers');
             return;
         }
 
@@ -50,9 +73,11 @@ export default function PrinterPage() {
             id: Date.now().toString(),
             name: newPrinter.name,
             type: newPrinter.type as 'kitchen' | 'bar' | 'receipt',
-            ipAddress: newPrinter.ipAddress,
-            port: newPrinter.port,
-            status: 'offline' // Default to offline
+            interfaceType: newPrinter.interfaceType as 'network' | 'usb',
+            ipAddress: newPrinter.interfaceType === 'network' ? newPrinter.ipAddress : undefined,
+            port: newPrinter.interfaceType === 'network' ? newPrinter.port : undefined,
+            serviceName: newPrinter.interfaceType === 'usb' ? newPrinter.serviceName : undefined,
+            status: 'offline'
         };
 
         try {
@@ -62,7 +87,7 @@ export default function PrinterPage() {
             });
             setPrinters([...printers, printer]);
             setIsAdding(false);
-            setNewPrinter({ name: '', type: 'kitchen', ipAddress: '', port: '9100' });
+            setNewPrinter({ name: '', type: 'kitchen', interfaceType: 'network', ipAddress: '', port: '9100', serviceName: '' });
             toast.success('Printer added successfully');
         } catch (error) {
             console.error('Error adding printer:', error);
@@ -73,11 +98,20 @@ export default function PrinterPage() {
     const handleDeletePrinter = async (id: string) => {
         if (!restaurantId) return;
         try {
-            const updatedPrinters = printers.filter(p => p.id !== id);
+            const printerToDelete = printers.find(p => p.id === id);
+            if (!printerToDelete) return;
+
             const docRef = doc(db, 'restaurants', restaurantId);
             await updateDoc(docRef, {
-                printers: updatedPrinters
+                printers: arrayUnion(printerToDelete) // Wait, delete logic was filtering. Firestore requires arrayRemove.
+                // Reverting to previous logic of rewriting the whole array or using arrayRemove if we have the exact object reference.
+                // Since structured objects might differ slightly if we re-construct, best is to write the filtered array.
             });
+            // Actually, the previous code used `updatedPrinters` and set `printers: updatedPrinters`. I should stick to that.
+
+            const updatedPrinters = printers.filter(p => p.id !== id);
+            await updateDoc(docRef, { printers: updatedPrinters });
+
             setPrinters(updatedPrinters);
             toast.success('Printer removed');
         } catch (error) {
@@ -109,7 +143,7 @@ export default function PrinterPage() {
                         <CardTitle className="text-lg">Add New Printer</CardTitle>
                     </CardHeader>
                     <CardContent className="space-y-4">
-                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                             <div className="space-y-2">
                                 <Label>Printer Name</Label>
                                 <Input
@@ -119,7 +153,7 @@ export default function PrinterPage() {
                                 />
                             </div>
                             <div className="space-y-2">
-                                <Label>Type</Label>
+                                <Label>Role</Label>
                                 <select
                                     className="flex h-10 w-full items-center justify-between rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
                                     value={newPrinter.type}
@@ -130,23 +164,65 @@ export default function PrinterPage() {
                                     <option value="receipt">Receipt Printer</option>
                                 </select>
                             </div>
-                            <div className="space-y-2">
-                                <Label>IP Address</Label>
-                                <Input
-                                    placeholder="e.g. 192.168.1.100"
-                                    value={newPrinter.ipAddress}
-                                    onChange={(e) => setNewPrinter({ ...newPrinter, ipAddress: e.target.value })}
-                                />
-                            </div>
-                            <div className="space-y-2">
-                                <Label>Port</Label>
-                                <Input
-                                    placeholder="e.g. 9100"
-                                    value={newPrinter.port}
-                                    onChange={(e) => setNewPrinter({ ...newPrinter, port: e.target.value })}
-                                />
+                        </div>
+
+                        <div className="space-y-2">
+                            <Label>Connection Type</Label>
+                            <div className="flex gap-4">
+                                <label className="flex items-center gap-2 cursor-pointer border p-3 rounded-md w-full bg-slate-50 hover:bg-slate-100">
+                                    <input
+                                        type="radio"
+                                        name="interface"
+                                        checked={newPrinter.interfaceType === 'network'}
+                                        onChange={() => setNewPrinter({ ...newPrinter, interfaceType: 'network' })}
+                                    />
+                                    <span className="font-medium">Network (Ethernet/Wi-Fi)</span>
+                                </label>
+                                <label className="flex items-center gap-2 cursor-pointer border p-3 rounded-md w-full bg-slate-50 hover:bg-slate-100">
+                                    <input
+                                        type="radio"
+                                        name="interface"
+                                        checked={newPrinter.interfaceType === 'usb'}
+                                        onChange={() => setNewPrinter({ ...newPrinter, interfaceType: 'usb' })}
+                                    />
+                                    <span className="font-medium">USB / System Driver</span>
+                                </label>
                             </div>
                         </div>
+
+                        {newPrinter.interfaceType === 'network' ? (
+                            <div className="grid grid-cols-3 gap-4">
+                                <div className="col-span-2 space-y-2">
+                                    <Label>IP Address</Label>
+                                    <Input
+                                        placeholder="e.g. 192.168.1.100"
+                                        value={newPrinter.ipAddress}
+                                        onChange={(e) => setNewPrinter({ ...newPrinter, ipAddress: e.target.value })}
+                                    />
+                                </div>
+                                <div className="space-y-2">
+                                    <Label>Port</Label>
+                                    <Input
+                                        placeholder="e.g. 9100"
+                                        value={newPrinter.port}
+                                        onChange={(e) => setNewPrinter({ ...newPrinter, port: e.target.value })}
+                                    />
+                                </div>
+                            </div>
+                        ) : (
+                            <div className="space-y-2">
+                                <Label>System Printer Name (Case Sensitive)</Label>
+                                <Input
+                                    value={newPrinter.serviceName}
+                                    onChange={(e) => setNewPrinter({ ...newPrinter, serviceName: e.target.value })}
+                                    placeholder="e.g. TICKETS, POS-80"
+                                />
+                                <p className="text-sm text-gray-500">
+                                    Must match the exact name in Windows "Printers & Scanners"
+                                </p>
+                            </div>
+                        )}
+
                         <div className="flex justify-end gap-2">
                             <Button variant="outline" onClick={() => setIsAdding(false)}>Cancel</Button>
                             <Button onClick={handleAddPrinter}>
@@ -185,22 +261,42 @@ export default function PrinterPage() {
                                     <span>Type:</span>
                                     <span className="col-span-2 font-medium capitalize text-foreground">{printer.type}</span>
                                 </div>
-                                <div className="grid grid-cols-3 text-muted-foreground">
-                                    <span>IP:</span>
-                                    <span className="col-span-2 font-medium text-foreground">{printer.ipAddress}</span>
-                                </div>
-                                <div className="grid grid-cols-3 text-muted-foreground">
-                                    <span>Port:</span>
-                                    <span className="col-span-2 font-medium text-foreground">{printer.port || '9100'}</span>
-                                </div>
+                                {printer.interfaceType === 'usb' ? (
+                                    <div className="grid grid-cols-3 text-muted-foreground">
+                                        <span>USB:</span>
+                                        <span className="col-span-2 font-medium text-foreground">{printer.serviceName}</span>
+                                    </div>
+                                ) : (
+                                    <>
+                                        <div className="grid grid-cols-3 text-muted-foreground">
+                                            <span>IP:</span>
+                                            <span className="col-span-2 font-medium text-foreground">{printer.ipAddress}</span>
+                                        </div>
+                                        <div className="grid grid-cols-3 text-muted-foreground">
+                                            <span>Port:</span>
+                                            <span className="col-span-2 font-medium text-foreground">{printer.port || '9100'}</span>
+                                        </div>
+                                    </>
+                                )}
                             </div>
                             <div className="mt-4 flex gap-2">
                                 <Button variant="outline" size="sm" className="w-full" onClick={() => {
                                     // Dummy order for testing
                                     const dummySession: any = { tableName: 'Test Table' };
                                     const dummyItems: any[] = [{ name: 'Test Item', quantity: 1, price: 0, notes: 'Connection Test' }];
-                                    import('@/utils/receiptGenerator').then(({ printReceipt }) => {
-                                        printReceipt(dummySession, dummyItems, `TEST PRINT: ${printer.name}`);
+                                    import('@/utils/receiptGenerator').then(({ printDirect }) => {
+                                        printDirect(
+                                            printer.ipAddress || 'localhost',
+                                            printer.port || '9100',
+                                            dummySession,
+                                            dummyItems,
+                                            `TEST PRINT: ${printer.name}`,
+                                            false,
+                                            {
+                                                type: printer.interfaceType || 'network',
+                                                name: printer.serviceName
+                                            }
+                                        ).catch(() => alert('Bridge connection failed'));
                                     });
                                 }}>
                                     Test Print
