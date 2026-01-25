@@ -210,9 +210,10 @@ export const printDirect = async (
         },
         data: {
             header: {
-                title: "THALI : Authentic Indian Cuisine",
-                address: ["Address: Plaza del Realejo,", "Local 1, 18009"],
-                originalTitle: title // Keep original "KITCHEN TICKET" etc if needed for conditional logic
+                // If showing prices (Bill), show Restaurant Name. If not (Ticket), show the Ticket Title (e.g. KITCHEN TICKET)
+                title: showPrices ? "THALI : Authentic Indian Cuisine" : title,
+                address: showPrices ? ["Address: Plaza del Realejo,", "Local 1, 18009"] : undefined,
+                originalTitle: title
             },
             meta: {
                 tableName: session.tableName,
