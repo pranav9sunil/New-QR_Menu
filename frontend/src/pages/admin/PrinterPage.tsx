@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Switch } from '@/components/ui/switch';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -23,6 +24,25 @@ export default function PrinterPage() {
         port: '9100',
         serviceName: ''
     });
+    const [autoPrintEnabled, setAutoPrintEnabled] = useState(false);
+
+    useEffect(() => {
+        // Load Auto-Print setting
+        const stored = localStorage.getItem('auto_print_enabled');
+        if (stored) {
+            setAutoPrintEnabled(JSON.parse(stored));
+        }
+    }, []);
+
+    const handleToggleAutoPrint = (enabled: boolean) => {
+        setAutoPrintEnabled(enabled);
+        localStorage.setItem('auto_print_enabled', JSON.stringify(enabled));
+        if (enabled) {
+            toast.success('Automatic Printing Enabled on this device');
+        } else {
+            toast.info('Automatic Printing Disabled');
+        }
+    };
 
     useEffect(() => {
         if (restaurantId) {
@@ -121,10 +141,19 @@ export default function PrinterPage() {
     return (
         <div className="space-y-6">
             <div className="flex items-center justify-between">
-                <h1 className="text-3xl font-bold flex items-center gap-2">
-                    <Printer className="h-8 w-8" />
-                    Printer Management
-                </h1>
+                <div>
+                    <h1 className="text-3xl font-bold flex items-center gap-2">
+                        <Printer className="h-8 w-8" />
+                        Printer Management
+                    </h1>
+                    <div className="flex items-center gap-2 mt-2">
+                        <Switch
+                            checked={autoPrintEnabled}
+                            onCheckedChange={handleToggleAutoPrint}
+                        />
+                        <Label>Enable Automatic Printing (This Device Only)</Label>
+                    </div>
+                </div>
                 <Button onClick={() => setIsAdding(!isAdding)}>
                     <Plus className="h-4 w-4 mr-2" />
                     Add Printer
