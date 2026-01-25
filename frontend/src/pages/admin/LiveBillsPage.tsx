@@ -94,7 +94,10 @@ export default function LiveBillsPage() {
     }, [sessions]);
 
     const loadData = async () => {
-        if (!restaurantId) return;
+        if (!restaurantId) {
+            setLoading(false);
+            return;
+        }
 
         try {
             // Load menu items
