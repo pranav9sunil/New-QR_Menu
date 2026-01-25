@@ -60,6 +60,8 @@ export default function LiveBillsPage() {
     useEffect(() => {
         const checkAutoPrint = async () => {
             const isAutoPrintEnabled = localStorage.getItem('auto_print_enabled') === 'true';
+            console.log('Auto-Print Check:', { isAutoPrintEnabled, printersCount: printers.length, sessionsCount: sessions.length });
+
             if (!isAutoPrintEnabled || printers.length === 0) return;
 
             const printedOrderIds = JSON.parse(localStorage.getItem('printed_orders') || '[]');
@@ -69,6 +71,10 @@ export default function LiveBillsPage() {
             for (const session of sessions) {
                 // Find unprinted orders
                 const unprintedOrders = session.orders.filter(order => !newPrintedIds.includes(order.id));
+
+                if (unprintedOrders.length > 0) {
+                    console.log(`Found ${unprintedOrders.length} unprinted orders for table ${session.tableName}`);
+                }
 
                 for (const order of unprintedOrders) {
                     // Categorize Items
