@@ -234,6 +234,14 @@ export default function AdminLayout() {
     useEffect(() => {
         const checkAutoPrint = async () => {
             const isAutoPrintEnabled = localStorage.getItem('auto_print_enabled') === 'true';
+
+            console.log('[AutoPrint Debug] State Check:', {
+                enabled: isAutoPrintEnabled,
+                printersFound: printers.length,
+                activeSessions: activeSessions.length,
+                totalOrdersTracked: activeSessions.reduce((acc, s) => acc + s.orders.length, 0)
+            });
+
             if (!isAutoPrintEnabled || printers.length === 0) return;
 
             const printedOrderIds = JSON.parse(localStorage.getItem('printed_orders') || '[]');
@@ -244,7 +252,7 @@ export default function AdminLayout() {
                 const unprintedOrders = session.orders.filter(order => !newPrintedIds.includes(order.id));
 
                 if (unprintedOrders.length > 0) {
-                    console.log(`[AdminLayout] Found unprinted orders for ${session.tableName}`);
+                    console.log(`[AutoPrint Debug] Found ${unprintedOrders.length} unprinted orders for ${session.tableName}`);
                 }
 
                 for (const order of unprintedOrders) {
