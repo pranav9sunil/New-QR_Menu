@@ -177,9 +177,13 @@ export const categorizeItems = (items: OrderItem[]) => {
     return { kitchenItems, barItems };
 };
 
-items: OrderItem[],
+export const printDirect = async (
+    printerIp: string,
+    printerPort: string,
+    session: SessionWithOrders,
+    items: OrderItem[],
     title: string,
-        showPrices: boolean = true
+    showPrices: boolean = true
 ) => {
     // Financials
     const total = items.reduce((sum, i) => sum + (i.price * i.quantity), 0);
