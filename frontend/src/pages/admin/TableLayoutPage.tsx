@@ -300,7 +300,11 @@ export default function TableLayoutDesigner() {
                 } as Reservation);
             });
             // Sort by time
-            loadedReservations.sort((a, b) => new Date(a.dateTime).getTime() - new Date(b.dateTime).getTime());
+            loadedReservations.sort((a, b) => {
+                const dateA = a.dateTime ? new Date(a.dateTime).getTime() : 0;
+                const dateB = b.dateTime ? new Date(b.dateTime).getTime() : 0;
+                return dateA - dateB;
+            });
             setReservations(loadedReservations);
         }, (error) => {
             console.error('Error loading reservations:', error);
