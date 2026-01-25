@@ -235,7 +235,8 @@ export default function PrinterPage() {
                                             printer.ipAddress || 'localhost',
                                             printer.port || '9100',
                                             dummySession,
-                                            dummyItems
+                                            dummyItems,
+                                            `TEST PRINT: ${printer.name}`
                                         ).catch((err) => {
                                             console.error(err);
                                             alert('Bridge connection failed. Check console for details.');
