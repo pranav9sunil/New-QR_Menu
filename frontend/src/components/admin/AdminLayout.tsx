@@ -39,7 +39,7 @@ import SettingsModal from './SettingsModal';
 import { Sheet, SheetContent, SheetTrigger, SheetHeader, SheetTitle } from '@/components/ui/sheet';
 import { Users } from 'lucide-react';
 import { db } from '@/config/firebase';
-import { doc, getDoc, collection, query, where, onSnapshot, getDocs } from 'firebase/firestore';
+import { doc, getDoc, collection, query, where, onSnapshot } from 'firebase/firestore';
 import { useEffect } from 'react';
 import type { Role, PrinterDevice, SessionWithOrders, Order } from '@/types';
 import { printDirect, categorizeItems } from '@/utils/receiptGenerator';
