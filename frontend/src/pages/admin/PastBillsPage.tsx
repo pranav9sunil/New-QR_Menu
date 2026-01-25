@@ -6,6 +6,8 @@ import {
     query,
     where,
     getDocs,
+    getDoc,
+    doc,
     orderBy,
     Timestamp,
 } from 'firebase/firestore';
@@ -47,12 +49,17 @@ export default function PastBillsPage() {
     const loadPrinters = async () => {
         if (!restaurantId) return;
         try {
-            const printersRef = collection(db, 'printers');
-            const q = query(printersRef, where('restaurantId', '==', restaurantId));
-            const snapshot = await getDocs(q);
-            const loadedPrinters: any[] = [];
-            snapshot.forEach(doc => loadedPrinters.push({ id: doc.id, ...doc.data() }));
-            setPrinters(loadedPrinters);
+            const docRef = doc(db, 'restaurants', restaurantId);
+            const docSnap = await getDoc(docRef);
+            if (docSnap.exists()) {
+                const data = docSnap.data();
+                const loadedPrinters = (data.printers || []).map((p: any) => ({
+                    ...p,
+                    interfaceType: p.interfaceType || 'network',
+                    serviceName: p.serviceName || ''
+                }));
+                setPrinters(loadedPrinters);
+            }
         } catch (error) {
             console.error('Error loading printers:', error);
         }

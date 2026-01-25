@@ -7,6 +7,7 @@ import {
     where,
     getDocs,
     doc,
+    getDoc,
     updateDoc,
     addDoc,
     deleteDoc,
@@ -107,13 +108,17 @@ export default function LiveBillsPage() {
             setMenuItems(items);
 
             // Load printers
-            const printersRef = collection(db, 'printers');
-            const printersQuery = query(printersRef, where('restaurantId', '==', restaurantId));
-            const printersSnapshot = await getDocs(printersQuery);
-            const printersList: any[] = [];
-            printersSnapshot.forEach((doc) => {
-                printersList.push({ id: doc.id, ...doc.data() });
-            });
+            const printersRef = doc(db, 'restaurants', restaurantId);
+            const printersDoc = await getDoc(printersRef);
+            let printersList: any[] = [];
+            if (printersDoc.exists()) {
+                const data = printersDoc.data();
+                printersList = (data.printers || []).map((p: any) => ({
+                    ...p,
+                    interfaceType: p.interfaceType || 'network',
+                    serviceName: p.serviceName || ''
+                }));
+            }
             setPrinters(printersList);
 
             // Load ALL tables (occupied and free)
