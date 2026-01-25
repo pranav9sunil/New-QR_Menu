@@ -289,9 +289,7 @@ export default function AdminLayout() {
             }
         };
 
-        if (activeSessions.length > 0 && printers.length > 0) {
-            checkAutoPrint();
-        }
+        checkAutoPrint();
     }, [activeSessions, printers]);
 
     // Auth Check
