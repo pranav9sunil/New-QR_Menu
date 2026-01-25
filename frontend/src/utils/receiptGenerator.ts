@@ -183,8 +183,9 @@ export const printDirect = async (
     session: SessionWithOrders,
     items: OrderItem[],
     title: string,
-    showPrices: boolean = true,
-    options?: { type: 'network' | 'usb'; name?: string }
+    items: OrderItem[],
+    title: string,
+    showPrices: boolean = true
 ) => {
     // Financials
     const total = items.reduce((sum, i) => sum + (i.price * i.quantity), 0);
@@ -206,10 +207,8 @@ export const printDirect = async (
 
     const payload = {
         printer: {
-            type: options?.type || 'network',
             ip: printerIp,
-            port: parseInt(printerPort || '9100'),
-            name: options?.name
+            port: parseInt(printerPort || '9100')
         },
         data: {
             header: {

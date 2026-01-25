@@ -10,7 +10,21 @@ const { exec } = require('child_process');
 const app = express();
 const PORT = 3001;
 
-app.use(cors());
+// Health Check
+app.get('/', (req, res) => res.send('Printer Bridge is Running'));
+
+app.use(cors({
+    origin: '*',
+    methods: ['GET', 'POST'],
+    allowedHeaders: ['Content-Type']
+}));
+
+// Allow Private Network Access (Important for Chrome 94+)
+app.use((req, res, next) => {
+    res.setHeader('Access-Control-Allow-Private-Network', 'true');
+    next();
+});
+
 app.use(bodyParser.json());
 
 // ESC/POS Command Constants
@@ -171,85 +185,15 @@ function buildReceiptBuffer(data) {
 }
 
 app.post('/print', (req, res) => {
-    // Support new payload structure: { printer: { type, ip, port, name }, data: ... }
-    // Fallback for legacy: { ip, port, data } -> treat as network
+    // Support new payload structure: { printer: { ip, port }, data: ... }
     let printer = req.body.printer;
     let data = req.body.data;
 
-    // Legacy fallback
-    if (!printer && req.body.ip) {
-        printer = {
-            type: 'network',
-            ip: req.body.ip,
-            port: req.body.port
-        };
-    }
-
-    if (!printer || !data) {
-        return res.status(400).json({ error: 'Missing printer config or data' });
+    if (!printer || !data || !printer.ip) {
+        return res.status(400).json({ error: 'Missing printer IP or data' });
     }
 
     const buffer = buildReceiptBuffer(data);
-
-    // Handle USB/System Printer (Windows)
-    if (printer.type === 'usb') {
-        if (!printer.name) {
-            return res.status(400).json({ error: 'Missing printer name for USB/System printing' });
-        }
-
-        const tempFilePath = path.join(os.tmpdir(), `receipt_${Date.now()}.bin`);
-
-        try {
-            fs.writeFileSync(tempFilePath, buffer);
-
-            if (os.platform() === 'win32') {
-                // Windows: Use PowerShell script
-                const scriptPath = path.join(__dirname, 'print_raw.ps1');
-                const psCommand = `powershell -ExecutionPolicy Bypass -File "${scriptPath}" -PrinterName "${printer.name}" -FilePath "${tempFilePath}"`;
-
-                console.log(`Printing to Windows USB/Shared: ${printer.name}`);
-                exec(psCommand, (error, stdout, stderr) => {
-                    cleanup(tempFilePath);
-                    if (error) {
-                        console.error('Print Error:', stderr || error.message);
-                        return res.status(500).json({ error: 'Failed to print: ' + (stderr || error.message) });
-                    }
-                    console.log('Print Success');
-                    res.json({ success: true });
-                });
-
-            } else if (os.platform() === 'darwin' || os.platform() === 'linux') {
-                // macOS/Linux: Use 'lp' command (CUPS)
-                // -d: Destination printer
-                // -o raw: Send raw data (ESC/POS) without processing
-                const command = `lp -d "${printer.name}" -o raw "${tempFilePath}"`;
-
-                console.log(`Printing to macOS/Linux Printer: ${printer.name}`);
-                exec(command, (error, stdout, stderr) => {
-                    cleanup(tempFilePath);
-                    if (error) {
-                        console.error('Print Error:', stderr || error.message);
-                        return res.status(500).json({ error: 'Failed to print: ' + (stderr || error.message) });
-                    }
-                    console.log('Print Success:', stdout);
-                    res.json({ success: true });
-                });
-
-            } else {
-                cleanup(tempFilePath);
-                return res.status(400).json({ error: 'USB/System printing not supported on this OS: ' + os.platform() });
-            }
-
-        } catch (err) {
-            console.error('File Write Error:', err);
-            return res.status(500).json({ error: 'Bridge internal error' });
-        }
-        return;
-    }
-
-    function cleanup(path) {
-        try { fs.unlinkSync(path); } catch (e) { }
-    }
 
     // Handle Network (Ethernet/Wi-Fi)
     const targetIp = printer.ip;
