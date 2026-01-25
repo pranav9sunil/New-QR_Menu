@@ -39,9 +39,10 @@ import SettingsModal from './SettingsModal';
 import { Sheet, SheetContent, SheetTrigger, SheetHeader, SheetTitle } from '@/components/ui/sheet';
 import { Users } from 'lucide-react';
 import { db } from '@/config/firebase';
-import { doc, getDoc } from 'firebase/firestore';
+import { doc, getDoc, collection, query, where, onSnapshot, getDocs } from 'firebase/firestore';
 import { useEffect } from 'react';
-import type { Role } from '@/types';
+import type { Role, PrinterDevice, SessionWithOrders, Order } from '@/types';
+import { printDirect, categorizeItems } from '@/utils/receiptGenerator';
 
 const DEFAULT_MENU_ITEMS = [
     {
@@ -171,9 +172,122 @@ function SortableSidebarItem({ item, onClick }: { item: any, onClick?: () => voi
 export default function AdminLayout() {
     const [settingsOpen, setSettingsOpen] = useState(false);
     const [mobileOpen, setMobileOpen] = useState(false);
-    const { signOut, userData } = useAuth();
+    const { user, restaurantId, logout, userData } = useAuth(); // Modified useAuth destructuring
     const navigate = useNavigate();
+    const [isMenuOpen, setIsMenuOpen] = useState(false); // New state
+    const [userRole, setUserRole] = useState<Role | null>(null); // New state, but userPermissions is still used below
 
+    // Auto-Print Logic State
+    const [printers, setPrinters] = useState<PrinterDevice[]>([]);
+    const [activeSessions, setActiveSessions] = useState<SessionWithOrders[]>([]);
+
+    // REAL IMPLEMENTATION OF AUTO-PRINT IN LAYOUT
+    // We need a stable list of SessionsWithOrders.
+    useEffect(() => {
+        if (!restaurantId) return;
+
+        // Listen to Printers
+        const qPrinters = query(collection(db, 'printers'), where('restaurantId', '==', restaurantId));
+        const unsubPrinters = onSnapshot(qPrinters, sn => setPrinters(sn.docs.map(d => ({ id: d.id, ...d.data() } as PrinterDevice))));
+
+        // Listen to Active Sessions (tables)
+        const qSessions = query(collection(db, 'sessions'), where('restaurantId', '==', restaurantId), where('status', 'in', ['active', 'payment_pending']));
+
+        // Listen to Orders
+        const qOrders = query(collection(db, 'orders'), where('restaurantId', '==', restaurantId));
+
+        let currentSessions: any[] = [];
+        let currentOrders: Order[] = [];
+
+        const updateSessionsWithOrders = () => {
+            const mapped = currentSessions.map(s => {
+                const sOrders = currentOrders.filter(o => o.sessionId === s.id);
+                // Sort orders by time if needed, handled by print logic
+                return {
+                    sessionId: s.id,
+                    tableName: s.tableName,
+                    tableId: s.tableId,
+                    orders: sOrders,
+                    totalAmount: 0
+                } as SessionWithOrders;
+            });
+            setActiveSessions(mapped);
+        };
+
+        const unsubSessions = onSnapshot(qSessions, (sn) => {
+            currentSessions = sn.docs.map(d => ({ id: d.id, ...d.data() }));
+            updateSessionsWithOrders();
+        });
+
+        const unsubOrders = onSnapshot(qOrders, (sn) => {
+            currentOrders = sn.docs.map(d => ({ id: d.id, ...d.data() } as Order));
+            updateSessionsWithOrders();
+        });
+
+        return () => {
+            unsubPrinters();
+            unsubSessions();
+            unsubOrders();
+        }
+    }, [restaurantId]);
+
+    // Check Auto-Print EFFECT
+    useEffect(() => {
+        const checkAutoPrint = async () => {
+            const isAutoPrintEnabled = localStorage.getItem('auto_print_enabled') === 'true';
+            if (!isAutoPrintEnabled || printers.length === 0) return;
+
+            const printedOrderIds = JSON.parse(localStorage.getItem('printed_orders') || '[]');
+            let newPrintedIds = [...printedOrderIds];
+            let hasNewPrints = false;
+
+            for (const session of activeSessions) {
+                const unprintedOrders = session.orders.filter(order => !newPrintedIds.includes(order.id));
+
+                if (unprintedOrders.length > 0) {
+                    console.log(`[AdminLayout] Found unprinted orders for ${session.tableName}`);
+                }
+
+                for (const order of unprintedOrders) {
+                    const { kitchenItems, barItems } = categorizeItems(order.items);
+
+                    if (kitchenItems.length > 0) {
+                        const kitchenPrinter = printers.find(p => p.type === 'kitchen');
+                        if (kitchenPrinter) {
+                            try {
+                                await printDirect(kitchenPrinter.ipAddress || 'localhost', kitchenPrinter.port || '9100', session, kitchenItems, 'KITCHEN TICKET', false);
+                                console.log(`Auto-printed Kitchen Order: ${order.id}`);
+                            } catch (e) { console.error('Auto-print Kitchen failed', e); }
+                        }
+                    }
+
+                    if (barItems.length > 0) {
+                        const barPrinter = printers.find(p => p.type === 'bar');
+                        if (barPrinter) {
+                            try {
+                                await printDirect(barPrinter.ipAddress || 'localhost', barPrinter.port || '9100', session, barItems, 'BAR TICKET', false);
+                                console.log(`Auto-printed Bar Order: ${order.id}`);
+                            } catch (e) { console.error('Auto-print Bar failed', e); }
+                        }
+                    }
+
+                    newPrintedIds.push(order.id);
+                    hasNewPrints = true;
+                }
+            }
+
+            if (hasNewPrints) {
+                if (newPrintedIds.length > 500) newPrintedIds = newPrintedIds.slice(-500);
+                localStorage.setItem('printed_orders', JSON.stringify(newPrintedIds));
+            }
+        };
+
+        if (activeSessions.length > 0 && printers.length > 0) {
+            checkAutoPrint();
+        }
+    }, [activeSessions, printers]);
+
+    // Auth Check
     const [userPermissions, setUserPermissions] = useState<string[] | null>(null);
 
     // Fetch Role Permissions
