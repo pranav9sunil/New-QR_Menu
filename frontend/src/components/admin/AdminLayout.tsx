@@ -172,10 +172,9 @@ function SortableSidebarItem({ item, onClick }: { item: any, onClick?: () => voi
 export default function AdminLayout() {
     const [settingsOpen, setSettingsOpen] = useState(false);
     const [mobileOpen, setMobileOpen] = useState(false);
-    const { user, restaurantId, logout, userData } = useAuth(); // Modified useAuth destructuring
+    const { restaurantId, signOut, userData } = useAuth(); // Corrected structure
     const navigate = useNavigate();
-    const [isMenuOpen, setIsMenuOpen] = useState(false); // New state
-    const [userRole, setUserRole] = useState<Role | null>(null); // New state, but userPermissions is still used below
+    // Removed unused states: isMenuOpen, userRole
 
     // Auto-Print Logic State
     const [printers, setPrinters] = useState<PrinterDevice[]>([]);
