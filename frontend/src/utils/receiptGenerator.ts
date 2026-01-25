@@ -242,7 +242,8 @@ export const printDirect = async (
         });
 
         if (!response.ok) {
-            throw new Error(`Bridge Error: ${response.statusText}`);
+            const errorData = await response.json().catch(() => ({}));
+            throw new Error(errorData.error || `Bridge Error: ${response.statusText}`);
         }
 
         return await response.json();

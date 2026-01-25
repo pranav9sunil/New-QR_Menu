@@ -193,7 +193,13 @@ app.post('/print', (req, res) => {
         return res.status(400).json({ error: 'Missing printer IP or data' });
     }
 
-    const buffer = buildReceiptBuffer(data);
+    let buffer;
+    try {
+        buffer = buildReceiptBuffer(data);
+    } catch (err) {
+        console.error('Buffer build error:', err);
+        return res.status(400).json({ error: 'Invalid print data format' });
+    }
 
     // Handle Network (Ethernet/Wi-Fi)
     const targetIp = printer.ip;
