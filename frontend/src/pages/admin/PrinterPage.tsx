@@ -74,10 +74,14 @@ export default function PrinterPage() {
             name: newPrinter.name,
             type: newPrinter.type as 'kitchen' | 'bar' | 'receipt',
             interfaceType: newPrinter.interfaceType as 'network' | 'usb',
-            ipAddress: newPrinter.interfaceType === 'network' ? newPrinter.ipAddress : undefined,
-            port: newPrinter.interfaceType === 'network' ? newPrinter.port : undefined,
-            serviceName: newPrinter.interfaceType === 'usb' ? newPrinter.serviceName : undefined,
-            status: 'offline'
+            status: 'offline',
+            // Only include relevant fields to avoid Firestore 'undefined' error
+            ...(newPrinter.interfaceType === 'network' ? {
+                ipAddress: newPrinter.ipAddress,
+                port: newPrinter.port
+            } : {
+                serviceName: newPrinter.serviceName
+            })
         };
 
         try {
@@ -89,9 +93,9 @@ export default function PrinterPage() {
             setIsAdding(false);
             setNewPrinter({ name: '', type: 'kitchen', interfaceType: 'network', ipAddress: '', port: '9100', serviceName: '' });
             toast.success('Printer added successfully');
-        } catch (error) {
+        } catch (error: any) {
             console.error('Error adding printer:', error);
-            toast.error('Failed to save printer');
+            toast.error(`Failed to save printer: ${error.message || 'Unknown error'}`);
         }
     };
 

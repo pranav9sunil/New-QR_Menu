@@ -12,6 +12,7 @@ import {
     doc as firestoreDoc,
     setDoc,
     getDoc,
+    writeBatch,
 } from 'firebase/firestore';
 import type { MenuItem, CustomizationGroup } from '@/types';
 import { Button } from '@/components/ui/button';
@@ -45,6 +46,11 @@ export default function MenuManagementPage() {
     const [imageFile, setImageFile] = useState<File | null>(null);
     const [imagePreview, setImagePreview] = useState<string | null>(null);
     const [uploading, setUploading] = useState(false);
+
+    // Delete Section State
+    const [deleteSectionDialogOpen, setDeleteSectionDialogOpen] = useState(false);
+    const [sectionToDelete, setSectionToDelete] = useState<string | null>(null);
+    const [isDeletingSection, setIsDeletingSection] = useState(false);
 
     const [formData, setFormData] = useState({
         name: '',
@@ -430,6 +436,53 @@ export default function MenuManagementPage() {
         });
     };
 
+    const confirmDeleteSection = (category: string) => {
+        setSectionToDelete(category);
+        setDeleteSectionDialogOpen(true);
+    };
+
+    const handleDeleteSection = async () => {
+        if (!restaurantId || !sectionToDelete) return;
+
+        setIsDeletingSection(true);
+        try {
+            // 1. Get all items in this category
+            const menuRef = collection(db, 'menu_items');
+            const q = query(menuRef, where('restaurantId', '==', restaurantId), where('category', '==', sectionToDelete));
+            const snapshot = await getDocs(q);
+
+            // 2. Create Batch
+            const batch = writeBatch(db);
+
+            // 3. Delete items
+            snapshot.docs.forEach((doc) => {
+                batch.delete(doc.ref);
+            });
+
+            // 4. Update Restaurant Category Order
+            const newCategoryOrder = categoryOrder.filter(c => c !== sectionToDelete);
+            const restaurantRef = firestoreDoc(db, 'restaurants', restaurantId);
+            batch.update(restaurantRef, {
+                categoryOrder: newCategoryOrder
+            });
+
+            // 5. Commit
+            await batch.commit();
+
+            // 6. Update Local State
+            setCategoryOrder(newCategoryOrder);
+            setMenuItems(prev => prev.filter(item => item.category !== sectionToDelete));
+            setDeleteSectionDialogOpen(false);
+            setSectionToDelete(null);
+
+        } catch (error) {
+            console.error("Error deleting section:", error);
+            alert("Failed to delete section");
+        } finally {
+            setIsDeletingSection(false);
+        }
+    };
+
     const startEdit = (item: MenuItem) => {
         setEditingItem(item);
         setFormData({
@@ -492,7 +545,19 @@ export default function MenuManagementPage() {
                 <div className="space-y-6">
                     {categories.map((category) => (
                         <div key={category} className="bg-gray-50/50 p-4 rounded-lg border">
-                            <h2 className="text-2xl font-semibold mb-4">{category}</h2>
+                            <div className="flex items-center justify-between mb-4">
+                                <h2 className="text-2xl font-semibold">{category}</h2>
+                                <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    onClick={() => confirmDeleteSection(category)}
+                                    className="text-muted-foreground hover:text-destructive"
+                                    title="Delete Section"
+                                >
+                                    <Trash2 className="h-5 w-5 mr-2" />
+                                    Delete Section
+                                </Button>
+                            </div>
                             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                                 {(() => {
                                     const items = menuItems.filter((item) => item.category === category);
@@ -988,6 +1053,34 @@ export default function MenuManagementPage() {
                             </Button>
                         </div>
                     </form>
+                </DialogContent>
+            </Dialog>
+            {/* Delete Section Dialog */}
+            <Dialog open={deleteSectionDialogOpen} onOpenChange={setDeleteSectionDialogOpen}>
+                <DialogContent>
+                    <DialogHeader>
+                        <DialogTitle>Delete Section</DialogTitle>
+                        <DialogDescription>
+                            Are you sure you want to delete the <strong>{sectionToDelete}</strong> section?
+                            This will permanently delete all items in this section. This action cannot be undone.
+                        </DialogDescription>
+                    </DialogHeader>
+                    <DialogFooter>
+                        <Button
+                            variant="outline"
+                            onClick={() => setDeleteSectionDialogOpen(false)}
+                            disabled={isDeletingSection}
+                        >
+                            Cancel
+                        </Button>
+                        <Button
+                            variant="destructive"
+                            onClick={handleDeleteSection}
+                            disabled={isDeletingSection}
+                        >
+                            {isDeletingSection ? 'Deleting...' : 'Delete Section'}
+                        </Button>
+                    </DialogFooter>
                 </DialogContent>
             </Dialog>
         </div>

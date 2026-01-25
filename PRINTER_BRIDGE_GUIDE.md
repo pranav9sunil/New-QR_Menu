@@ -1,96 +1,89 @@
-# Printer Bridge Setup Guide
+# Printer Bridge Setup Guide (macOS Edition)
 
 ## ⚠️ Important Architecture Note
-You requested to deploy this bridge to **Vercel**. However, **this is not possible** for Direct LAN Printing, and here is why:
-
-*   **Vercel** runs in the "Cloud" (Internet).
-*   **Your Printer** is on your "Local Network" (LAN) at `192.168.10.15`.
-*   Cloud servers **cannot** connect to your private Local IPs.
-
-**The Solution:**
-The **Frontend website** lives on Vercel.
-The **Printer Bridge** lives on your **Local Computer** (the POS terminal or laptop in the restaurant).
-The Frontend talks to the Bridge via `localhost` (Internal Device Communication), and the Bridge talks to the Printer.
+The **Printer Bridge** must run on the **local computer** (Mac) that is on the same network as your printers. The cloud-hosted website (Vercel) talks to this bridge via `localhost`, and the bridge talks to the printers.
 
 ```
-[ Frontend (Vercel) ]  ---> [ Browser (Your PC) ]  ---> [ Bridge (Your PC) ]  ---> [ Printer (LAN) ]
-      (Internet)                (Localhost)                 (127.0.0.1)           (192.168.10.15)
+[ Frontend (Vercel) ]  ---> [ Browser (Your Mac) ]  ---> [ Bridge (Your Mac) ]  ---> [ Printer (LAN/USB) ]
+      (Internet)                (Localhost)                 (127.0.0.1)           (192.168.x.x or USB)
 ```
 
 ## Setup Instructions
 
 ### 1. Prerequisites
-*   The computer connected to the printer (or on the same Wi-Fi) must have **Node.js** installed.
-    *   Download: [https://nodejs.org/](https://nodejs.org/) (LTS Version)
+*   **Node.js**: Your Mac must have Node.js installed.
+    *   Verify by opening Terminal and typing: `node -v`
+    *   If not found, download & install from: [https://nodejs.org/](https://nodejs.org/) (LTS Version)
 
-### 2. Installation (One Time)
-1.  Open your terminal or command prompt.
-2.  Navigate to the project folder:
+### 2. Installation
+1.  **Download** the `printer-bridge-mac-pro.zip` provided to you.
+2.  **Extract** the zip file to a stable folder (e.g., `Documents/printer-bridge`).
+    *   *Note: Do not move this folder after setup, or the service will break.*
+3.  **Open Terminal**:
+    *   Press `Cmd + Space`, type `Terminal`, and press Enter.
+4.  **Navigate to the folder**:
+    *   Type `cd ` (with a space).
+    *   Drag and drop the `printer-bridge` folder from Finder into the Terminal window.
+    *   Press **Enter**.
+
+### 3. Setup Persistent Service (Auto-Start)
+This will set up the bridge to run automatically in the background whenever your Mac starts.
+
+1.  **Run the Setup Script**:
+    Copy and paste this command into your Terminal:
     ```bash
-    cd "User Files/ASU/Internship/QR Code again/printer-bridge"
+    chmod +x setup_mac_service.sh && ./setup_mac_service.sh
     ```
-3.  Install the required dependencies:
-    ```bash
-    npm install
-    ```
+2.  **Verify**:
+    *   You should see: `✅ Printer Bridge Service Installed!`
+    *   To check if it's running immediately, open: [http://localhost:3001](http://localhost:3001). You should see `Cannot GET /` (which means the server is active) or use the "Test Print" in Admin.
 
-### 3. Running the Bridge
-Whenever you open your restaurant, you must start the bridge.
+The bridge is now running in the background and will restart automatically if it crashes or if you restart your Mac.
 
-**Option A: Manual Start**
-1.  Open Terminal.
-2.  Run:
-    ```bash
-    npm start
-    ```
-3.  Keep this window open. You will see: `Printer Bridge Server running on http://localhost:3001`
+### 4. Managing the Service (Optional)
+*   **Stop Service**: `launchctl unload ~/Library/LaunchAgents/com.thali.printerbridge.plist`
+*   **Start Service**: `launchctl load ~/Library/LaunchAgents/com.thali.printerbridge.plist`
+*   **View Logs**: `tail -f bridge.log` (Run inside the printer-bridge folder)
 
-**Option B: Auto-Start (Recommended)**
-To make it start automatically when the computer turns on, we will use the **Windows Startup Folder**. This is easier and more reliable than PM2 on Windows.
+---
 
-1.  **Right-click** the `start_bridge.bat` file you just created.
-2.  Choose **Create Shortcut** (it will create a file like `start_bridge - Shortcut`).
-3.  Press **Windows Key + R** on your keyboard.
-4.  Type `shell:startup` and press **Enter**.
-    *   *This opens the folder where Windows looks for programs to start automatically.*
-5.  **Drag and drop** the shortcut you created into this folder.
+## Managing Printers
 
-That's it! Next time you restart the computer, the Printer Bridge will open automatically.
+### A. Network Printers (Ethernet / Wi-Fi)
+If your printers are connected to the router.
 
-## Verifying It Works
-1.  Ensure the bridge is running.
-2.  Open your Vercel-hosted App.
-3.  Go to **Admin > Printer Management**.
-4.  Click **"Add Printer"**.
-    *   **IP:** 192.168.10.15 (Your specific printer IP)
-    *   **Port:** 9100 (Default)
-    *   **Type:** Kitchen
-5.  Click **Save**.
-6.  Click **"Test Print"**.
-    *   You should see a log in your terminal: `Connecting to printer... Data sent.`
-    *   The printer should print a small test ticket.
+1.  **Find the IP Address**: Turn the printer OFF. Hold the FEED button. Turn it ON. Release FEED after 3 seconds. The IP will be on the printed slip (e.g., `192.168.1.50`).
+2.  **Add in Admin Panel**:
+    *   **Name**: Desired Name (e.g., "Kitchen")
+    *   **Type**: Kitchen / Bar / Receipt
+    *   **Interface**: `Network`
+    *   **IP**: `192.168.1.50` (The IP found above)
+    *   **Port**: `9100` (Default)
 
-## Troubleshooting
-*   **"Direct print failed"**: Check if the black terminal window with `npm start` is running.
-*   **"Printer connection timeout"**: Check if your computer is on the same Wi-Fi/Ethernet as the printer. Ping the printer IP from your terminal: `ping 192.168.10.15`
-*   **Windows Error: "npm.ps1 cannot be loaded because running scripts is disabled"**:
-    *   This is a Windows security setting in PowerShell.
-    *   **Fix:** Run this command in PowerShell:
-        ```powershell
-        Set-ExecutionPolicy -Scope CurrentUser -ExecutionPolicy RemoteSigned
-        ```
-    *   Press `Y` when asked. Then try `npm install` again.
-    *   *Alternative:* Use **Command Prompt (cmd)** instead of PowerShell.
+### B. USB Printers
+If your printers are plugged directly into the Mac.
 
-## Moving to Another Computer
-If you want to run this bridge on a different computer (e.g., the dedicated POS terminal):
+1.  **Find the System Name**:
+    *   Open **System Settings** > **Printers & Scanners**.
+    *   Find the exact name of your printer (e.g., `EPSON_TM_T88V`, `Star_TSP100`).
+2.  **Add in Admin Panel**:
+    *   **Name**: Desired Name (e.g., "Counter Printer")
+    *   **Type**: Receipt
+    *   **Interface**: `USB / System`
+    *   **System Printer Name**: Enter the exact name from System Settings (e.g., `EPSON_TM_T88V`).
 
-1.  **Copy the Folder**: You can copy the entire `printer-bridge` folder to the new computer.
-    *   *Tip: You don't need to copy the `node_modules` folder. It's cleaner to delete it before copying and reinstall it on the new machine.*
-2.  **Install Node.js**: The new computer **MUST** have Node.js installed.
-    *   Download: [https://nodejs.org/](https://nodejs.org/)
-3.  **Install Dependencies**:
-    *   Open terminal in the new folder.
-    *   Run `npm install` (this recreates the `node_modules` folder).
-4.  **Start the Bridge**: Run `npm start`.
+---
 
+## Troubleshooting on Mac
+
+*   **"Permission denied" for start script**:
+    *   Run `chmod +x start_bridge.sh` again.
+
+*   **"Address already in use"**:
+    *   Another instance might be running. Close all Terminal windows and try again.
+    *   Or find and kill it: `lsof -i :3001` then `kill -9 <PID>`.
+
+*   **"Test Print failed"**:
+    *   Check if the Terminal window is still open and running.
+    *   Check if your Mac is connected to the same Wi-Fi as the printer (for Network printers).
+    *   Check if the USB cable is secure (for USB printers).

@@ -191,41 +191,64 @@ app.post('/print', (req, res) => {
 
     const buffer = buildReceiptBuffer(data);
 
-    // Handle USB (Windows only usually)
+    // Handle USB/System Printer (Windows)
     if (printer.type === 'usb') {
-        if (os.platform() !== 'win32') {
-            return res.status(400).json({ error: 'USB printing currently supported on Windows only via this bridge.' });
-        }
         if (!printer.name) {
-            return res.status(400).json({ error: 'Missing printer name for USB printing' });
+            return res.status(400).json({ error: 'Missing printer name for USB/System printing' });
         }
 
         const tempFilePath = path.join(os.tmpdir(), `receipt_${Date.now()}.bin`);
-        const scriptPath = path.join(__dirname, 'print_raw.ps1');
 
         try {
             fs.writeFileSync(tempFilePath, buffer);
 
-            // Execute PowerShell script
-            const psCommand = `powershell -ExecutionPolicy Bypass -File "${scriptPath}" -PrinterName "${printer.name}" -FilePath "${tempFilePath}"`;
+            if (os.platform() === 'win32') {
+                // Windows: Use PowerShell script
+                const scriptPath = path.join(__dirname, 'print_raw.ps1');
+                const psCommand = `powershell -ExecutionPolicy Bypass -File "${scriptPath}" -PrinterName "${printer.name}" -FilePath "${tempFilePath}"`;
 
-            console.log(`Printing to USB: ${printer.name}`);
-            exec(psCommand, (error, stdout, stderr) => {
-                // Cleanup
-                try { fs.unlinkSync(tempFilePath); } catch (e) { }
+                console.log(`Printing to Windows USB/Shared: ${printer.name}`);
+                exec(psCommand, (error, stdout, stderr) => {
+                    cleanup(tempFilePath);
+                    if (error) {
+                        console.error('Print Error:', stderr || error.message);
+                        return res.status(500).json({ error: 'Failed to print: ' + (stderr || error.message) });
+                    }
+                    console.log('Print Success');
+                    res.json({ success: true });
+                });
 
-                if (error) {
-                    console.error('USB Print Error:', stderr || error.message);
-                    return res.status(500).json({ error: 'Failed to print to USB: ' + (stderr || error.message) });
-                }
-                console.log('USB Print Success');
-                res.json({ success: true });
-            });
+            } else if (os.platform() === 'darwin' || os.platform() === 'linux') {
+                // macOS/Linux: Use 'lp' command (CUPS)
+                // -d: Destination printer
+                // -o raw: Send raw data (ESC/POS) without processing
+                const command = `lp -d "${printer.name}" -o raw "${tempFilePath}"`;
+
+                console.log(`Printing to macOS/Linux Printer: ${printer.name}`);
+                exec(command, (error, stdout, stderr) => {
+                    cleanup(tempFilePath);
+                    if (error) {
+                        console.error('Print Error:', stderr || error.message);
+                        return res.status(500).json({ error: 'Failed to print: ' + (stderr || error.message) });
+                    }
+                    console.log('Print Success:', stdout);
+                    res.json({ success: true });
+                });
+
+            } else {
+                cleanup(tempFilePath);
+                return res.status(400).json({ error: 'USB/System printing not supported on this OS: ' + os.platform() });
+            }
+
         } catch (err) {
             console.error('File Write Error:', err);
             return res.status(500).json({ error: 'Bridge internal error' });
         }
         return;
+    }
+
+    function cleanup(path) {
+        try { fs.unlinkSync(path); } catch (e) { }
     }
 
     // Handle Network (Ethernet/Wi-Fi)
