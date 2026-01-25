@@ -185,9 +185,20 @@ export default function AdminLayout() {
     useEffect(() => {
         if (!restaurantId) return;
 
-        // Listen to Printers
-        const qPrinters = query(collection(db, 'printers'), where('restaurantId', '==', restaurantId));
-        const unsubPrinters = onSnapshot(qPrinters, sn => setPrinters(sn.docs.map(d => ({ id: d.id, ...d.data() } as PrinterDevice))));
+        // Listen to Printers (from Restaurant Document)
+        const docRef = doc(db, 'restaurants', restaurantId);
+        const unsubPrinters = onSnapshot(docRef, (docSnap) => {
+            if (docSnap.exists()) {
+                const data = docSnap.data();
+                const loadedPrinters = (data.printers || []).map((p: any) => ({
+                    ...p,
+                    interfaceType: p.interfaceType || 'network',
+                    serviceName: p.serviceName || ''
+                })) as PrinterDevice[];
+                console.log('[AutoPrint Debug] Printers fetched from Doc:', loadedPrinters.length);
+                setPrinters(loadedPrinters);
+            }
+        }, err => console.error('[AutoPrint Debug] Printer Doc Listen Error:', err));
 
         // Listen to Active Sessions (tables)
         const qSessions = query(collection(db, 'sessions'), where('restaurantId', '==', restaurantId), where('status', 'in', ['active', 'payment_pending']));
