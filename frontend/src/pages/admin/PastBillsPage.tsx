@@ -293,8 +293,7 @@ export default function PastBillsPage() {
                     fullSession,
                     mappedItems,
                     'Final Bill',
-                    true,
-                    { type: receiptPrinter.interfaceType || 'network', name: receiptPrinter.name }
+                    true
                 );
                 return; // Success
             } catch (error) {

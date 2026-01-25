@@ -439,8 +439,7 @@ export default function LiveBillsPage() {
                     selectedSession,
                     consolidatedItems,
                     'Bill',
-                    true,
-                    { type: receiptPrinter.interfaceType || 'network', name: receiptPrinter.name }
+                    true
                 );
                 return;
             } catch (e) {
@@ -518,8 +517,7 @@ export default function LiveBillsPage() {
                         selectedSession,
                         consolidatedItems,
                         'FINAL BILL',
-                        true,
-                        { type: printer.interfaceType || 'network', name: printer.name }
+                        true
                     );
                     // If print success, close session
                     await performClose();
