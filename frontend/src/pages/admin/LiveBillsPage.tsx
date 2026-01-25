@@ -774,11 +774,7 @@ export default function LiveBillsPage() {
                                                                 selectedSession,
                                                                 kitchenItems,
                                                                 'KITCHEN TICKET',
-                                                                false,
-                                                                {
-                                                                    type: kitchenPrinter.interfaceType || 'network',
-                                                                    name: kitchenPrinter.serviceName
-                                                                }
+                                                                false
                                                             );
                                                             alert('Sent to Kitchen Printer');
                                                         } catch (err) {
@@ -815,11 +811,7 @@ export default function LiveBillsPage() {
                                                                 selectedSession,
                                                                 barItems,
                                                                 'BAR TICKET',
-                                                                false,
-                                                                {
-                                                                    type: barPrinter.interfaceType || 'network',
-                                                                    name: barPrinter.serviceName
-                                                                }
+                                                                false
                                                             );
                                                             alert('Sent to Bar Printer');
                                                         } catch (err) {
