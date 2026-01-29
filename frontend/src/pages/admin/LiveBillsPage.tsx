@@ -60,8 +60,15 @@ export default function LiveBillsPage() {
     // Auto-select receipt printer when modal opens
     useEffect(() => {
         if (printModalOpen && printers.length > 0) {
+            console.log('[Print Debug] Printers available:', printers);
             const receipt = printers.find(p => p.type === 'receipt');
-            if (receipt) setSelectedPrinter(receipt.id);
+            if (receipt) {
+                console.log('[Print Debug] Auto-selected Receipt Printer:', receipt.name);
+                setSelectedPrinter(receipt.id);
+            } else {
+                console.log('[Print Debug] No Receipt Printer found. Available types:', printers.map(p => p.type));
+                setSelectedPrinter('');
+            }
         }
     }, [printModalOpen, printers]);
 
@@ -515,10 +522,18 @@ export default function LiveBillsPage() {
         };
 
         // If specific printer selected in modal (or default)
-        if (selectedPrinter) {
-            const printer = printers.find(p => p.id === selectedPrinter);
+        let targetPrinterId = selectedPrinter;
+        if (!targetPrinterId) {
+            // Fallback: try to find receipt printer again
+            const defaultReceipt = printers.find(p => p.type === 'receipt');
+            if (defaultReceipt) targetPrinterId = defaultReceipt.id;
+        }
+
+        if (targetPrinterId) {
+            const printer = printers.find(p => p.id === targetPrinterId);
             if (printer) {
                 try {
+                    console.log('[Print Debug] Printing Bill to:', printer.name, printer.type);
                     await printDirect(
                         printer.ipAddress,
                         printer.port || '9100',

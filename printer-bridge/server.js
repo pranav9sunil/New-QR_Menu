@@ -107,7 +107,9 @@ function buildReceiptBuffer(data) {
         // We print name first then align price right? 
         // Or Qty Name........Price
 
+        // Enable Double Height for Items
         commands.push(CMD.TEXT_BOLD);
+        commands.push(CMD.TEXT_DOUBLE_HEIGHT);
 
         // Print Qty + Name
         // Smart truncation/padding
@@ -115,6 +117,7 @@ function buildReceiptBuffer(data) {
 
         if (data.financials) { // If showing prices
             // Calculate padding
+            // Note: Double height doesn't change width, so chars match normal width approx.
             const spaceNeeded = maxCols - leftPart.length - priceStr.length;
             if (spaceNeeded > 0) {
                 commands.push(leftPart + ' '.repeat(spaceNeeded) + priceStr + '\n');
@@ -137,9 +140,9 @@ function buildReceiptBuffer(data) {
             commands.push(`  + ${item.customizations}\n`);
         }
         if (item.notes) {
-            commands.push(CMD.TEXT_SMALL);
+            // commands.push(CMD.TEXT_SMALL); // Small might be too small
             commands.push(`  (Note: ${item.notes})\n`);
-            commands.push(CMD.TEXT_NORMAL);
+            // commands.push(CMD.TEXT_NORMAL);
         }
         // commands.push('\n'); // Single spacing? Image is tight.
     });

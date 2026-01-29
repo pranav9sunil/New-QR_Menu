@@ -83,22 +83,22 @@ export const generateReceiptHtml = (
             margin: 0 auto; /* Center the wrapper */
             box-sizing: border-box;
             padding: 20px 25px; /* Increased padding: Top/Bottom 20px, Left/Right 25px */
-            font-size: 15px;
+            font-size: 17px; /* Increased from 15px */
             line-height: 1.2;
             color: #000;
         }
         .header { text-align: center; margin-bottom: 20px; padding-top: 10px; }
-        .meta { font-size: 13px; margin-top: 15px; text-align: left; }
+        .meta { font-size: 15px; margin-top: 15px; text-align: left; } /* Increased from 13px */
         .divider { border-top: 1px dashed #000; margin: 10px 0; }
         .item { margin-bottom: 8px; }
         .row { display: flex; justify-content: space-between; align-items: flex-start; }
-        .qty { width: 30px; font-weight: bold; }
+        .qty { width: 35px; font-weight: bold; } /* Increased from 30px */
         .name { flex: 1; font-weight: bold; }
-        .price { width: 70px; text-align: right; }
-        .details { margin-left: 30px; font-size: 13px; color: #333; }
-        .note { margin-left: 30px; font-size: 13px; font-weight: bold; margin-top: 2px; }
-        .financials { margin-top: 15px; font-size: 14px; }
-        .total-row { font-size: 18px; font-weight: bold; margin-top: 5px; border-top: 1px solid #000; padding-top: 5px; }
+        .price { width: 80px; text-align: right; } /* Increased from 70px */
+        .details { margin-left: 35px; font-size: 15px; color: #333; } /* Increased from 30px margin, 13px font */
+        .note { margin-left: 35px; font-size: 15px; font-weight: bold; margin-top: 2px; }
+        .financials { margin-top: 15px; font-size: 16px; } /* Increased from 14px */
+        .total-row { font-size: 20px; font-weight: bold; margin-top: 5px; border-top: 1px solid #000; padding-top: 5px; } /* Increased from 18px */
     </style>
 </head>
 <body>
@@ -127,14 +127,14 @@ export const generateReceiptHtml = (
                 <span>Tax (10%):</span>
                 <span>€${taxAmount.toFixed(2)}</span>
             </div>
-            <div class="row total-row" style="font-size: 18px;">
+            <div class="row total-row" style="font-size: 20px;">
                 <span>TOTAL:</span>
                 <span>€${total.toFixed(2)}</span>
             </div>
         </div>
         ` : ''}
 
-        <div style="text-align:center; margin-top:20px; font-size:14px;">
+        <div style="text-align:center; margin-top:20px; font-size:16px;">
             GRACIAS POR SU VISITA
         </div>
     </div>
