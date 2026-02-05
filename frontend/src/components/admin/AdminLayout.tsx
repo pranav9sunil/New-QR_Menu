@@ -42,7 +42,7 @@ import { db } from '@/config/firebase';
 import { doc, getDoc, collection, query, where, onSnapshot } from 'firebase/firestore';
 import { useEffect } from 'react';
 import type { Role, PrinterDevice, SessionWithOrders, Order } from '@/types';
-import { printDirect, categorizeItems } from '@/utils/receiptGenerator';
+import { printDirect, categorizeItems, printReceipt } from '@/utils/receiptGenerator';
 
 const DEFAULT_MENU_ITEMS = [
     {
@@ -269,23 +269,38 @@ export default function AdminLayout() {
                 for (const order of unprintedOrders) {
                     const { kitchenItems, barItems } = categorizeItems(order.items);
 
+                    // Kitchen Auto-Print
                     if (kitchenItems.length > 0) {
-                        const kitchenPrinter = printers.find(p => p.type === 'kitchen');
+                        const kitchenPrinter = printers.find(p => p.type?.toLowerCase() === 'kitchen');
                         if (kitchenPrinter) {
                             try {
                                 await printDirect(kitchenPrinter.ipAddress || 'localhost', kitchenPrinter.port || '9100', session, kitchenItems, 'KITCHEN TICKET', false);
                                 console.log(`Auto-printed Kitchen Order: ${order.id}`);
-                            } catch (e) { console.error('Auto-print Kitchen failed', e); }
+                            } catch (e) {
+                                console.error('Auto-print Kitchen failed, using fallback', e);
+                                printReceipt(session, kitchenItems, 'KITCHEN TICKET', false);
+                            }
+                        } else {
+                            // Fallback if no printer found
+                            console.log('No Kitchen Printer config, using fallback');
+                            printReceipt(session, kitchenItems, 'KITCHEN TICKET', false);
                         }
                     }
 
+                    // Bar Auto-Print
                     if (barItems.length > 0) {
-                        const barPrinter = printers.find(p => p.type === 'bar');
+                        const barPrinter = printers.find(p => p.type?.toLowerCase() === 'bar');
                         if (barPrinter) {
                             try {
                                 await printDirect(barPrinter.ipAddress || 'localhost', barPrinter.port || '9100', session, barItems, 'BAR TICKET', false);
                                 console.log(`Auto-printed Bar Order: ${order.id}`);
-                            } catch (e) { console.error('Auto-print Bar failed', e); }
+                            } catch (e) {
+                                console.error('Auto-print Bar failed, using fallback', e);
+                                printReceipt(session, barItems, 'BAR TICKET', false);
+                            }
+                        } else {
+                            console.log('No Bar Printer config, using fallback');
+                            printReceipt(session, barItems, 'BAR TICKET', false);
                         }
                     }
 

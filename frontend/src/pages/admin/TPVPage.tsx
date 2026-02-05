@@ -117,7 +117,7 @@ export default function TPVPage() {
             tablesSnapshot.forEach((doc) => {
                 loadedTables.push({ id: doc.id, ...doc.data() } as Table);
             });
-            setTables(loadedTables.sort((a, b) => a.name.localeCompare(b.name)));
+            setTables(loadedTables.sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' })));
 
         } catch (error) {
             console.error('Error loading data:', error);

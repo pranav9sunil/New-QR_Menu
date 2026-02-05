@@ -61,7 +61,7 @@ export default function LiveBillsPage() {
     useEffect(() => {
         if (printModalOpen && printers.length > 0) {
             console.log('[Print Debug] Printers available:', printers);
-            const receipt = printers.find(p => p.type === 'receipt');
+            const receipt = printers.find(p => p.type?.toLowerCase() === 'receipt');
             if (receipt) {
                 console.log('[Print Debug] Auto-selected Receipt Printer:', receipt.name);
                 setSelectedPrinter(receipt.id);
@@ -524,8 +524,8 @@ export default function LiveBillsPage() {
         // If specific printer selected in modal (or default)
         let targetPrinterId = selectedPrinter;
         if (!targetPrinterId) {
-            // Fallback: try to find receipt printer again
-            const defaultReceipt = printers.find(p => p.type === 'receipt');
+            // Fallback: try to find receipt printer again (Case Insensitive)
+            const defaultReceipt = printers.find(p => p.type?.toLowerCase() === 'receipt');
             if (defaultReceipt) targetPrinterId = defaultReceipt.id;
         }
 
@@ -787,8 +787,8 @@ export default function LiveBillsPage() {
                                                         alert('No kitchen items found');
                                                         return;
                                                     }
-                                                    // Find Kitchen Printer
-                                                    const kitchenPrinter = printers.find(p => p.type === 'kitchen');
+                                                    // Find Kitchen Printer (Case Insensitive)
+                                                    const kitchenPrinter = printers.find(p => p.type?.toLowerCase() === 'kitchen');
                                                     if (kitchenPrinter) {
                                                         try {
                                                             await printDirect(
@@ -824,8 +824,8 @@ export default function LiveBillsPage() {
                                                         return;
                                                     }
 
-                                                    // Find Bar Printer
-                                                    const barPrinter = printers.find(p => p.type === 'bar');
+                                                    // Find Bar Printer (Case Insensitive)
+                                                    const barPrinter = printers.find(p => p.type?.toLowerCase() === 'bar');
                                                     if (barPrinter) {
                                                         try {
                                                             await printDirect(

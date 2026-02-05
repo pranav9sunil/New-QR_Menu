@@ -164,10 +164,15 @@ export const categorizeItems = (items: OrderItem[]) => {
     const barItems: OrderItem[] = [];
 
     items.forEach(item => {
-        // Simple logic: Drinks go to Bar, everything else to Kitchen
-        // We rely on category name. If category is missing, check name?
+        // Extended logic: Check category AND item name for drink keywords
         const category = item.category?.toLowerCase() || '';
-        if (['drinks', 'beverages', 'cocktails', 'wines', 'beers', 'alcohol', 'soft drinks'].includes(category)) {
+        const name = item.name.toLowerCase();
+
+        const drinkKeywords = ['drink', 'beverage', 'cocktail', 'wine', 'beer', 'alcohol', 'liquor', 'spirit', 'gin', 'vodka', 'rum', 'whiskey', 'water', 'juice', 'soda', 'coke', 'pepsi', 'fanta', 'sprite', 'coffee', 'tea', 'chai', 'lassi', 'shake', 'smoothie', 'bottle', 'glass', 'pint'];
+
+        const isDrink = drinkKeywords.some(k => category.includes(k) || name.includes(k));
+
+        if (isDrink) {
             barItems.push(item);
         } else {
             kitchenItems.push(item);

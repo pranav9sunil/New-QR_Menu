@@ -176,8 +176,11 @@ function buildReceiptBuffer(data) {
     }
 
     commands.push('\n');
-    commands.push(CMD.ALIGN_CENTER);
-    commands.push('GRACIAS POR SU VISITA\n');
+    commands.push('\n');
+    if (data.financials) {
+        commands.push(CMD.ALIGN_CENTER);
+        commands.push('GRACIAS POR SU VISITA\n');
+    }
 
     // --- 5. Cut ---
     commands.push(CMD.INIT);
